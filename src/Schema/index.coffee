@@ -1,4 +1,4 @@
-# var User = Schema.extend('User', {
+# var User = Schema.extend('User', 'users', {
 #   name: {
 #     first: String,
 #     last: String
@@ -76,6 +76,67 @@
 # 1. For each operation, ...
 #
 
+# # Supporting dynamic and schema-based approaches at the same time
+# ############################################################################
+#
+# # (1) Just dynamic api; No schemas
+# ############################################################################
+# model.set '_group.todoList', model.arrayRef '_group.todos', '_group.todoIds'
+# # is: model.set '_group.todoList', {$r: '_group.todos', $k: '_group.todoIds'}
+#
+# # (2) When we move to Memory Schemas
+# ####################################
+# Group = Schema.extend 'Group', 'groups',
+#   name: String
+#   todoList: [Todo]
+#   topTodo: Todo
+#   mySet: Set(Todo)
+#
+# Todo = Schema.extend 'Todo', 'groups.*.todos',
+#   id: Number
+#   completed: Boolean
+#   text: String
+#
+# Group.source MemoryAsync,
+#   name: String
+#   todoList: arrayRef('todos', 'todoIds')
+#   todos: Set(Todo)
+#   todoIds: [Number]
+#
+# Todo.source MemoryAsync
+#
+# # (3) When we move to MySQL
+# ###########################
+# Group.source MySql,
+#   name: pkey
+#   todoList: [inverse(Todo, 'group_name')]
+#
+# Group.source(MySql).index 'field1', 'field2'
+#
+# Todo.source MySql,
+#   id: pkey
+#   completed: Boolean
+#   text: String
+#   group_name: String # foreign key to Group I belong to
+#
+# # (A) Potential implementation solution
+# #######################################
+# model.set '_group.todoList', model.arrayRef '_group.todos', '_group.todoIds'
+# # This could define a generated, hidden source schema for Group and Todo.
+# # arrayRef implies 2 different Schemas (1 for _group.todos and 1 for _group)
+#
+# # set could behave differently when the value is arrayRef(...) or ref(...),
+# # so that we do not write refs data verbatim to a different persistence store
+#
+# model.push '_group.todoList', id: id, completed: false, text: text
+#
+# # Creates txn/op - [ver, txnId, 'push', 'groups.stanford.todoList', {id: id, completed: false, text: text}]
+# # This op gets sent to the server Store
+# # 
+# 
+
+Query = require './Query'
+
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
 # attributes, and methods encapsulating business logic.
@@ -87,14 +148,18 @@ Schema._subclasses = []
 Schema.extend = (name, namespace, config) ->
   prototype = new @()
 
-  SubClass = (attrs) ->
+  SubClass = (attrs, addOps = true) ->
     # Instead of a dirty tracking object, we keep around an oplog,
     # which we can leverage better at the Adapter layer - e.g., think
     # collapsing multiple pushes into a single push in MongoDB
     @oplog = []
+    @attrs = {}
 
-    if attrs for attr, val of attrs
-      @set attr, val
+    if attrs
+      for attrName, attrVal of attrs
+        @_assignAttrs attrName, attrVal
+        if addOps
+          @set attrName, attrVal
     return
 
   SubClass:: = prototype = new @()
@@ -191,6 +256,15 @@ for queryMethodName, queryFn of Query::
       return query
 
 Schema:: =
+  _assignAttrs: (name, val, obj = @attrs) ->
+    if val.constructor == Object
+      for k, v of val
+        nextObj = obj[name] ||= {}
+        @_assignAttrs k, v, nextObj
+    else
+      obj[name] = val
+    return
+
   atomic: ->
     obj = Object.create @
     obj._atomic = true
