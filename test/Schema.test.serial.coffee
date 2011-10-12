@@ -110,6 +110,8 @@ module.exports =
     User = Schema.extend 'User', 'users',
       name: String
 
+    User.source Mongo
+
     user = { id: 1, name: 'Brian' }
     # model.set 'users.1', user
     User.create user, (err) ->
