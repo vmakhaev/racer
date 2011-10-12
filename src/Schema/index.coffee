@@ -49,6 +49,7 @@
 # 4. User schema + query params to generate 1+ adapter queries
 # 5. Assemble the data, and pass it to the callback (or create a Promise)
 #
+
 Schema = module.exports = ->
   return
 
@@ -142,3 +143,12 @@ Schema:: =
 #Schema.async = AsyncSchema
 #
 #Schema.sync = SyncSchema
+
+Schema.static 'mixin', (mixin) ->
+  {static, proto} = mixin
+  @static static if static
+  if proto for k, v of proto
+    @::[k] = v
+
+contextMixin = require './mixin.context'
+Schema.mixin contextMixin
