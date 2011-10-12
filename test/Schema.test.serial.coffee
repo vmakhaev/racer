@@ -106,11 +106,19 @@ module.exports =
     path.should.equal '1.name'
     done()
 
+  '''an instantiated Schema doc initialized with attributes
+  should be able to retrieve those attributes via get''': (done) ->
+    User = Schema.extend 'User', 'users',
+      name: String
+    user = new User name: 'Brian'
+    user.get('name').should.equal 'Brian'
+    done()
+
   'Schema.findById should callback with the appropriate object': (done) ->
     User = Schema.extend 'User', 'users',
       name: String
 
-    User.source Mongo
+    # User.source Mongo
 
     user = { id: 1, name: 'Brian' }
     # model.set 'users.1', user

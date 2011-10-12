@@ -1,3 +1,11 @@
+# User.context('registrationStep1')
+#   .validate validatorFn
+#   .toJSON toJSON
+#
+# user = new User
+# user = user.context('validation')
+# user.validate(...)
+# user.toJSON()
 module.exports =
   static:
     context: (name) ->

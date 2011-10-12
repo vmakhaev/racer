@@ -29,6 +29,7 @@ MongoQueryBuilder:: =
   # multiple sequental push ops into a single atomic push
   _minifyOps: (oplog) -> oplog
 
+  # TODO Better lang via MongoQueryBuilder.handle 'set', (...) -> ?
   set: (query, conds, path, val, ver) ->
     field = @fields[path]
     if query.method is undefined
