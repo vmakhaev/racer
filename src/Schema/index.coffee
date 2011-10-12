@@ -11,10 +11,32 @@
 # })
 #
 # User.source Mongo,
-#   name: Mongo.default,
+#   name: Mongo.default
 #   friends: [ref(User)]
 #   bestFriend: ref(User)
 #
+# User.source Mongo, (mongo) ->
+#   mongo.cover 'name'
+#
+# User.source Mongo,
+#   name: true
+#   friends: [DbRef()]
+#   bestFriend: DbRef()
+#   blogPosts: [DbRef(inverse: 'author')]
+#
+# BlogPost.source Mongo,
+#   author: DbRef()
+#   title: String
+#
+# # Example 3
+# User.source Mongo,
+#   blogPosts: [DbRef(inverse: 'authors')]
+#   blogPosts: [ObjectId]
+#   blogPosts: [inverse(BlogPost.authors)]
+#   blogPosts: [inverse(BlogPost.authors.id == this.id)]
+#
+# BlogPost.source Mongo,
+#   authors: [DbRef('blogPosts')]
 #
 # model.get 'users.1.name'
 #   # 1. First, lookup the 
@@ -49,6 +71,10 @@
 # 4. User schema + query params to generate 1+ adapter queries
 # 5. Assemble the data, and pass it to the callback (or create a Promise)
 #
+# Via a series of store.mutators and store.gets via model.atomic
+#
+# 1. For each operation, ...
+#
 
 Schema = module.exports = ->
   return
@@ -68,10 +94,10 @@ Schema.extend = (name, namespace, config) ->
       @set attr, val
     return
 
-  SubClass:: = prototype
-  SubClass::constructor = SubClass
-  SubClass::name = name
-  SubClass::namesapce = namespace
+  SubClass:: = prototype = new @()
+  prototype.constructor = SubClass
+  prototype.name = name
+  prototype.namesapce = namespace
 
   SubClass._subclasses = []
   SubClass._superclass = @
@@ -105,16 +131,40 @@ Schema.static = (name, fn) ->
   decorateDescendants @_subclasses, name, fn
   return @
 
+# TODO Setup method and data structure that is used to
+# define async flow control for reads/writes
 Schema.static
+  _sources: []
+  source: (Source, fieldsConfig) ->
+    adapter = new Source
+    @_sources.push adapter
+    for field, config of fieldsConfig
+      # Setup handlers in adapter
+      adapter.setup field, config
   fromPath: (path) ->
     pivot = path.indexOf '.'
     namespace = path.substring 0, pivot
     path = path.substring pivot+1
     return { path, schema: @_schemas[namespace] }
 
+  applyOps: (oplog, callback) ->
+    sources = @_sources
+    remainingSources = sources.length
+    for source in sources
+      # Send oplog to all adapters. Adapters can choose to ignore 
+      # the query if it's not relevant to it, or it can choose to 
+      # execute the oplog selectively. How does this fit in with STM?
+      # We need to have a rollback mechanism
+      source.applyOps oplog, ->
+        --remainingSources || callback()
+
   create: (attrs, callback) ->
     obj = new @(attrs)
     obj.save callback
+
+  update: (conds, attrs, callback) ->
+    oplog = ([conds, path, 'set', val] for path, val of attrs)
+    @applyOps oplog, callback
 
   findById: (id, callback) ->
     query = { conds: {id: id}, meta: '*' }
@@ -129,16 +179,12 @@ Schema.static
 
 Schema:: =
   set: (attr, val) ->
-    @oplog.push ['set', attr, val]
+    conds = {_id} if _id = @attrs._id
+    @oplog.push [conds, 'set', attr, val]
     return @
 
   save: (callback) ->
-    @constructor
-    # Send oplog to all adapters. Adapters can
-    # choose to ignore the query if it's not relevant
-    # to it, or it can choose to execute the oplog selectively.
-    # How does this fit in with STM? We need to have a rollback
-    # mechanism
+    @constructor.applyOps @oplog, callback
 
 #Schema.async = AsyncSchema
 #
