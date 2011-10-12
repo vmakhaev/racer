@@ -76,6 +76,9 @@
 # 1. For each operation, ...
 #
 
+# This is how we define our logical schema (vs our data source schema).
+# At this layer, we take care of validation, most typecasting, virtual
+# attributes, and methods encapsulating business logic.
 Schema = module.exports = ->
   return
 
@@ -166,25 +169,62 @@ Schema.static
     oplog = ([conds, path, 'set', val] for path, val of attrs)
     @applyOps oplog, callback
 
+  destroy: (conds, callback) ->
+    oplog = [ [conds] ]
+    @applyOps oplog, callback
+
   findById: (id, callback) ->
     query = { conds: {id: id}, meta: '*' }
     @query query, callback
-
-  find: -> throw new Error 'Unimplemented'
-  findOne: -> throw new Error 'Unimplemented'
 
   query: (query, callback) ->
     # Compile query into a set of adapter queries
     # with the proper async flow control.
 
+# Copy over where, find, findOne, etc from Query::,
+# so we can do e.g., Schema.find, Schema.findOne, etc
+for queryMethodName, queryFn of Query::
+  do (queryFn) ->
+    Schema.static queryMethodName, ->
+      query = new Query
+      queryFn.apply query, arguments
+      return query
+
 Schema:: =
-  set: (attr, val) ->
+  atomic: ->
+    obj = Object.create @
+    obj._atomic = true
+    return obj
+
+  set: (attr, val, callback) ->
     conds = {_id} if _id = @attrs._id
     @oplog.push [conds, 'set', attr, val]
+    if @_atomic
+      @save callback
     return @
 
+  # Get from in-memory local @attrs
+  # TODO Leverage defineProperty or Proxy.create server-side
+  get: (attr) ->
+    return @attrs[attr]
+
+  del: (attr, callback) ->
+    conds = {_id} if _id = @attrs._id
+    @oplog.push [conds, 'del', attr]
+    if @_atomic
+      @save callback
+    return @
+
+  # self-destruct
+  destroy: (callback) ->
+    conds = {_id} if _id = @attrs._id
+    @oplog.push [conds, 'destroy']
+    @constructor.applyOps oplog, callback
+
   save: (callback) ->
-    @constructor.applyOps @oplog, callback
+    oplog = @oplog
+    @oplog = []
+    @constructor.applyOps oplog, callback
 
 #Schema.async = AsyncSchema
 #
