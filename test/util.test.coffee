@@ -34,3 +34,9 @@ module.exports =
     util.hasKeys({a: 2}).should.be.true
     util.hasKeys({a: 2}, 'a').should.be.false
     util.hasKeys({a: 2, b: 3}, 'a').should.be.true
+
+  'test curry': ->
+    curry = util.curry
+    add = (a, b) -> a + b
+    addTen = curry add, 10
+    addTen(2).should.equal 12

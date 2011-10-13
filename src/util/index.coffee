@@ -15,6 +15,9 @@ module.exports =
       return true
     return false
 
+  curry: (fn, args...) ->
+    return (remArgs...)-> fn.apply null, args.concat remArgs
+
   # Ported to coffeescript from node.js assert.js
   deepEqual: deepEqual = (actual, expected) ->
       # 7.1. All identical values are equivalent, as determined by ==.
