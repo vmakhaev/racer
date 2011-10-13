@@ -113,7 +113,9 @@ MongoQueryBuilder:: =
           nextQuery = {}
           [nextQuery] = @push nextQuery, conds, path, values...
         else
-          throw new Error "Unimplemented"
+          # Then the prior ops involved something like $set
+          nextQuery = {}
+          [nextQuery] = @push nextQuery, conds, path, values...
       else
         throw new Error "Unimplemented"
     else
