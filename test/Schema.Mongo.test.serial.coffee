@@ -122,3 +122,32 @@ module.exports =
     ]
 
     done()
+
+  '''a single item push on field A, followed by a multi item
+  push on field B should result in 1 $push query and 1 $pushAll
+  query''': (done) ->
+    addOp = false
+    s = new User _id: 1, addOp
+    s.push 'tags', 'nodejs'
+    s.push 'keywords', 'sf', 'socal'
+    m = new Mongo
+    queries = m._queriesForOps s.oplog
+    queries.length.should.equal 2
+
+    {method, args} = queries[0]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $push: { tags: 'nodejs'} }
+      { upsert: true, safe: true }
+    ]
+
+    {method, args} = queries[1]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $pushAll: { keywords: ['sf', 'socal']} }
+      { upsert: true, safe: true }
+    ]
+
+    done()
