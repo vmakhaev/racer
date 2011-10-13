@@ -117,7 +117,10 @@ MongoQueryBuilder:: =
           nextQuery = {}
           [nextQuery] = @push nextQuery, conds, path, values...
       else
-        throw new Error "Unimplemented"
+        # Current building query involves conditions not equal to
+        # current op conditions, so create a new query
+        nextQuery = {}
+        [nextQuery] = @push nextQuery, conds, path, values...
     else
       nextQuery = {}
       [nextQuery] = @push nextQuery, conds, path, val, ver
