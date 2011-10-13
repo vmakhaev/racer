@@ -208,3 +208,35 @@ module.exports =
     ]
 
     done()
+
+  '''an oplog involving 2 different conditions should result in 2 separate
+  queries for oplog single-item push on doc matching conditions A, then
+  single-item push on doc matching conditions B''': (done) ->
+    addOp = false
+    s1 = new User _id: 1, addOp
+    s2 = new User _id: 2, addOp
+    s1.push 'tags', 'nodejs'
+    s2.push 'tags', 'sf'
+    oplog = s1.oplog.concat s2.oplog
+
+    m = new Mongo
+    queries = m._queriesForOps oplog
+    queries.length.should.equal 2
+
+    {method, args} = queries[0]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $push: { tags: 'nodejs' } }
+      { upsert: true, safe: true }
+    ]
+
+    {method, args} = queries[1]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 2}
+      { $push: { tags: 'sf'} }
+      { upsert: true, safe: true }
+    ]
+
+    done()
