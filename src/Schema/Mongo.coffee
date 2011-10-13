@@ -97,26 +97,28 @@ MongoQueryBuilder:: =
       else
         throw new Error "length of 0! Uh oh!"
 
-      # TODO Only one field can be pushed at a time
       (args = {})[path] = val
       (query.val ||= {})[k] = args
     else if qmethod == 'update'
       if objEquiv qconds, conds
         if query.val.$push
-          query.val.$pushAll = {}
-          # TODO Only one field can be pushed at a time; check for equiv path or not
-          query.val.$pushAll[path] = [query.val.$push[path], values...]
-          delete query.val.$push
-        else if query.val.$pushAll && objEquiv qconds, conds
+          if existingPush = query.val.$push[path]
+            query.val.$pushAll = {}
+            query.val.$pushAll[path] = [existingPush, values...]
+            delete query.val.$push
+          else
+            nextQuery = {}
+            [nextQuery] = @push nextQuery, conds, path, values...
+        else if query.val.$pushAll
           nextQuery = {}
-          [nextQuery] = @set nextQuery, conds, path, val, ver
+          [nextQuery] = @push nextQuery, conds, path, values...
         else
           throw new Error "Unimplemented"
       else
         throw new Error "Unimplemented"
     else
       nextQuery = {}
-      [nextQuery] = @set nextQuery, conds, path, val, ver
+      [nextQuery] = @push nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
   pop: (query, path, values..., ver) ->
