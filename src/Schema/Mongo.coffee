@@ -82,10 +82,7 @@ MongoQueryBuilder:: =
   del: (query, path, ver) ->
     field = @fields[path]
 
-  push: (query, conds, path, values..., ver) ->
-    unless values.length
-      values.push ver
-      ver = null
+  push: (query, conds, path, values...) ->
     # Assign or augment query.(method|conds|val)
     {method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
@@ -100,7 +97,6 @@ MongoQueryBuilder:: =
       else
         throw new Error "length of 0! Uh oh!"
 
-      val = if values.length then values[0] else values
       # TODO Only one field can be pushed at a time
       (args = {})[path] = val
       (query.val ||= {})[k] = args

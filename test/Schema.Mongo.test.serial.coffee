@@ -60,6 +60,23 @@ module.exports =
     ]
     done()
 
+  '''pushing multiple items with a single push should result
+  in a $pushAll query''': (done) ->
+    addOp = false
+    s = new User _id: 1, addOp
+    s.push 'tags', 'nodejs', 'sf'
+    m = new Mongo
+    queries = m._queriesForOps s.oplog
+    queries.length.should.equal 1
+    {method, args} = queries[0]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $pushAll: { tags: ['nodejs', 'sf']} }
+      { upsert: true, safe: true }
+    ]
+    done()
+
   '2 pushes should result in a $pushAll': (done) ->
     addOp = false
     s = new User _id: 1, addOp
