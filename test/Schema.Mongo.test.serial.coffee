@@ -7,6 +7,7 @@ User = Schema.extend 'User', 'users',
   name: String
   age: Number
   tags: [String]
+  keywords: [String]
 
 module.exports =
   # Query building
@@ -92,4 +93,32 @@ module.exports =
       { $pushAll: { tags: ['nodejs', 'sf']} }
       { upsert: true, safe: true }
     ]
+    done()
+
+  '''a single item push on field A, followed by a single item
+  push on field B should result in 2 $push queries''': (done) ->
+    addOp = false
+    s = new User _id: 1, addOp
+    s.push 'tags', 'nodejs'
+    s.push 'keywords', 'sf'
+    m = new Mongo
+    queries = m._queriesForOps s.oplog
+    queries.length.should.equal 2
+
+    {method, args} = queries[0]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $push: { tags: 'nodejs'} }
+      { upsert: true, safe: true }
+    ]
+
+    {method, args} = queries[1]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $push: { keywords: 'sf'} }
+      { upsert: true, safe: true }
+    ]
+
     done()
