@@ -295,6 +295,16 @@ Schema:: =
     @oplog.push [conds, 'destroy']
     @constructor.applyOps oplog, callback
 
+  push: (attr, vals..., callback) ->
+    if 'function' != typeof callback
+      vals.push callback
+      callback = null
+    conds = {_id} if _id = @attrs._id
+    @oplog.push [conds, 'push', attr, vals...]
+    if @_atomic
+      @save callback
+    return @
+
   save: (callback) ->
     oplog = @oplog
     @oplog = []
