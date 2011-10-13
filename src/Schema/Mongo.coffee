@@ -105,12 +105,19 @@ MongoQueryBuilder:: =
       (args = {})[path] = val
       (query.val ||= {})[k] = args
     else if qmethod == 'update'
-      if query.val.$push && objEquiv qconds, conds
-        delta = query.val.$push ||= {}
-        delta[path] = val
+      if objEquiv qconds, conds
+        if query.val.$push
+          query.val.$pushAll = {}
+          # TODO Only one field can be pushed at a time; check for equiv path or not
+          query.val.$pushAll[path] = [query.val.$push[path], values...]
+          delete query.val.$push
+        else if query.val.$pushAll && objEquiv qconds, conds
+          nextQuery = {}
+          [nextQuery] = @set nextQuery, conds, path, val, ver
+        else
+          throw new Error "Unimplemented"
       else
-        nextQuery = {}
-        [nextQuery] = @set nextQuery, conds, path, val, ver
+        throw new Error "Unimplemented"
     else
       nextQuery = {}
       [nextQuery] = @set nextQuery, conds, path, val, ver
