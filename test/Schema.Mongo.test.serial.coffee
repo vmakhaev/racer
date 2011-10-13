@@ -45,6 +45,22 @@ module.exports =
     ]
     done()
 
+  'should create a new $unset query for a single del': (done) ->
+    addOp = false
+    s = new User _id: 1, addOp
+    s.del 'name'
+    m = new Mongo
+    queries = m._queriesForOps s.oplog
+    queries.length.should.equal 1
+    {method, args} = queries[0]
+    method.should.equal 'update'
+    args.should.eql [
+      {_id: 1}
+      { $unset: { name: 1 } }
+      { upsert: true, safe: true }
+    ]
+    done()
+
   'should create a new update $push query for a single push': (done) ->
     addOp = false
     s = new User _id: 1, addOp

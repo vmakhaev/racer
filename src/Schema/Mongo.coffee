@@ -59,7 +59,6 @@ MongoQueryBuilder:: =
 
   # TODO Better lang via MongoQueryBuilder.handle 'set', (...) -> ?
   set: (query, conds, path, val, ver) ->
-    field = @fields[path]
     # Assign or augment query.(method|conds|val)
     {method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
@@ -68,8 +67,7 @@ MongoQueryBuilder:: =
       (delta = {})[path] = val
       query.val = { $set: delta }
     else if qmethod == 'update'
-      if query.val.$set && objEquiv qconds, conds
-        delta = query.val.$set ||= {}
+      if (delta = query.val.$set) && objEquiv qconds, conds
         delta[path] = val
       else
         nextQuery = {}
@@ -79,8 +77,28 @@ MongoQueryBuilder:: =
       [nextQuery] = @set nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
-  del: (query, path, ver) ->
-    field = @fields[path]
+  del: (query, conds, path) ->
+    # Assign or augment query.(method|conds|val)
+    {method: qmethod, conds: qconds} = query
+    if qmethod is undefined && qconds is undefined
+      query.method = 'update'
+      query.conds = conds
+      (unset = {})[path] = 1
+      query.val = { $unset: unset }
+    else if qmethod == 'update'
+      if (unset = query.val.$unset) && objEquiv qconds, conds
+        unset[path] = 1
+      else
+        # Either the existing query involves another $atomic, or the
+        # conditions of the existing query do not match the incoming
+        # op conditions. In both cases, we must create a new query
+        nextQuery = {}
+        [nextQuery] = @set nextQuery, conds, path, val, ver
+    else
+      # The current query involves
+      nextQuery = {}
+      [nextQuery] = @set nextQuery, conds, path, val, ver
+    return [query, nextQuery]
 
   push: (query, conds, path, values...) ->
     # Assign or augment query.(method|conds|val)
