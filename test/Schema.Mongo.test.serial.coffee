@@ -1,15 +1,134 @@
 should = require 'should'
 Mongo = require 'Schema/Mongo'
-Schema = require 'Schema'
+{schema} = Schema = require 'Schema'
+schema = -> {}
+
+schema = -> {}
+ObjectId = String
+
+# Blog = Schema.extend 'Blog', 'blogs',
+#   _id: String
+#   name: String
 
 User = Schema.extend 'User', 'users',
-  _id: Number
+  _id: String
   name: String
   age: Number
   tags: [String]
   keywords: [String]
+  luckyNumbers: [Number]
+#  blog: Blog
+#  friends: [schema('User')]
+  # BRIAN: A Schema should be a special Type?
+  # But Types only make sense in the context of being used
+  # in a Schema definition. So perhaps, it is more accurate
+  # to say that Schema can have a Type interface
+#  group: schema('Group')
+
+User.source Mongo, 'los_users',
+  _id: ObjectId
+  name: String
+  age: Number
+  tags: [String]
+  keywords: [String]
+  friendIds: [User._id]
+  groupId: schema(Group)._id
+,
+  friends: User.friendIds
+#   # Alt A
+#   friends: User.where('_id').findOne (user) ->
+#     User.where('_id', user.friendIds).find()
+#   # Alt B
+#   friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
+
+Group = Schema.extend 'Group', 'groups',
+  _id: String
+  name: String
+#  users: [User]
+
+Group.source Mongo,
+  _id: ObjectId
+  name: String
+,
+  users: [User.groupId]
+#   users: [User.groupId.pointingTo.me]
+#   users: User.find().where('groupId') # Curries fn User.where('groupId', thisGroupId)
+#   users: curry User.find().where, 'groupId'
+
+#   # Using join table
+#   friends: [schema('FriendsJoin').friendA]
+# 
+# # (*)
+# # users                             users
+# # me <---[friendAId, friendBId]---> me.friends 
+# Mongo.schema.join 'FriendsJoin', 'friends_join',
+#   friendXId: User._id
+#   friendYId: User._id
+# ,
+#   friendA: friendYId
+#   friendB: friendXId
+# 
+# User.source Mongo, 'los_users',
+#   _id: Mongo.pkey
+#   # ...
+#   friendIds: [User._id]
+#   blogId: Blog._id
+# ,
+#   friends: friendIds
+# 
+# # Scen A - array of refs
+# Blog.source Mongo,
+#   _id: ObjectId
+#   authorIds: [User._id]
+# ,
+#   authors: 'authorIds'
+# 
+# User.source Mongo,
+#   _id: ObjectId
+# ,
+#   blog: pointedToBy(Blog.authors)
+# 
+# # Scen B - ref
+# Blog.source Mongo,
+#   _id: ObjectId
+# User.source Mongo,
+#   _id: ObjectId
+#   blogId: Blog._id
+# ,
+#   blog: 'blogId'
+# 
+# # Scen C - Inverse ref
+# Blog.source Mongo,
+#   _id: ObjectId
+#   authorId: schema('User')._id # (*)
+# 
+# User.source Mongo,
+#   _id: ObjectId
+# ,
+#   blog: Blog.authorId
 
 module.exports =
+  # Casting
+  'logical schema layer should cast String attributes': (done) ->
+    s = new User _id: 1
+    s.get('_id').should.equal '1'
+    done()
+
+  'logical schema layer should cast Number attributes': (done) ->
+    s = new User age: '26'
+    s.get('age').should.equal 26
+    done()
+
+  'logical schema layer should cast [String] attributes': (done) ->
+    u = new User tags: [1, 2, 3, 4]
+    u.get('tags').should.eql ['1', '2', '3', '4']
+    done()
+
+  'logical schema layer should cast [Number] attributes': (done) ->
+    s = new User luckyNumbers: ['4', 8, '12', 16]
+    s.get('luckyNumbers').should.eql [4, 8, 12, 16]
+    done()
+
   # Query building
   'should create a new update $set query for a single set': (done) ->
     addOp = false

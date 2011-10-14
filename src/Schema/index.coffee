@@ -135,7 +135,11 @@
 # # 
 # 
 
+# TODO Re-name @attrs and @_fields for less confusion
+
 Query = require './Query'
+Type = require './Type'
+Promise = require '../Promise'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
@@ -146,8 +150,6 @@ Schema = module.exports = ->
 Schema._schemas = {}
 Schema._subclasses = []
 Schema.extend = (name, namespace, config) ->
-  prototype = new @()
-
   SubClass = (attrs, addOps = true) ->
     # Instead of a dirty tracking object, we keep around an oplog,
     # which we can leverage better at the Adapter layer - e.g., think
@@ -157,6 +159,9 @@ Schema.extend = (name, namespace, config) ->
 
     if attrs
       for attrName, attrVal of attrs
+        # TODO Lazy casting later?
+        type = SubClass._fields[attrName]
+        attrVal = type.cast attrVal
         @_assignAttrs attrName, attrVal
         if addOps
           @set attrName, attrVal
@@ -179,6 +184,12 @@ Schema.extend = (name, namespace, config) ->
   SubClass._statics = {}
   for name, fn of @_statics
     SubClass.static name, fn
+
+  SubClass._fields = {}
+  # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
+  for fieldName, descriptor of config
+    type = @inferType descriptor, fieldName
+    SubClass._fields[fieldName] = type
 
   return Schema._schemas[namespace] = SubClass
 
@@ -208,7 +219,7 @@ Schema.static
     @_sources.push adapter
     for field, config of fieldsConfig
       # Setup handlers in adapter
-      adapter.setup field, config
+      adapter.addField field, config
   fromPath: (path) ->
     pivot = path.indexOf '.'
     namespace = path.substring 0, pivot
@@ -245,6 +256,10 @@ Schema.static
   query: (query, callback) ->
     # Compile query into a set of adapter queries
     # with the proper async flow control.
+
+  plugin: (plugin, opts) ->
+    plugin @, opts
+    return @
 
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., Schema.find, Schema.findOne, etc
@@ -310,6 +325,21 @@ Schema:: =
     @oplog = []
     @constructor.applyOps oplog, callback
 
+  # We use this when we want to reference a Schema
+  # that we have yet to define.
+  schema: (schemaAsString) ->
+    promise = new Promise
+    promise.on (schema) =>
+      SubSchema = @_schemas[schemaAsString]
+      SubSubSchema = ->
+        SubSchema.apply @, arguments
+      SubSubSchema:: = new SubSchema
+      SubSubSchema.assignAsTypeToSchemaField schema, fieldName
+    Schema.on 'define', (schema) ->
+      if schema.name == schemaAsString
+        promise.fulfill schema, promise.fieldName
+    return promise
+
 #Schema.async = AsyncSchema
 #
 #Schema.sync = SyncSchema
@@ -322,3 +352,67 @@ Schema.static 'mixin', (mixin) ->
 
 contextMixin = require './mixin.context'
 Schema.mixin contextMixin
+
+actLikeTypeMixin =
+  static:
+    # TODO Rename this
+    assignAsTypeToSchemaField: (schema, fieldName) ->
+      schema[fieldName] = @
+
+Schema.mixin actLikeTypeMixin
+
+# Email = Schema.type 'Email',
+#   extend: String
+#
+# Email.validate (val, callback) ->
+#   # ...
+#
+# Schema.type 'Number',
+#   get: (val, doc) -> parseInt val, 10
+#   set: (val, doc) -> parseInt val, 10
+Schema.type = (typeName, config) ->
+  return type if type = @_types[typeName]
+
+  type = @_types[typeName] = new Type typeName, config
+
+  return type
+Schema._types = {}
+
+# Factory method returning new Type instances
+Schema.inferType = (descriptor, fieldName) ->
+  if Array.isArray descriptor
+    subType = descriptor[0]
+    arrayType = @type 'Array'
+    concreteArrayType = Object.create arrayType
+    concreteArrayType.memberType = @inferType subType
+    return concreteArrayType
+  if descriptor == Number
+    return Object.create @type 'Number'
+  if descriptor == Boolean
+    return Object.create @type 'Boolena'
+  if descriptor == String
+    return Object.create @type 'String'
+
+  # e.g., descriptor = schema('User')
+  if descriptor instanceof Promise
+    if @_schemas[fieldName]
+      promise.fulfill schema, fieldName
+    return descriptor
+
+  if 'function' == typeof decriptor
+    SubSchema = ->
+      descriptor.apply @, arguments
+      return
+    SubSchema:: = new descriptor
+    return SubSchema # e.g., other Schemas
+  throw new Error 'Unsupported descriptor ' + descriptor
+
+Schema.type 'String',
+  caster: (val) -> val.toString()
+
+Schema.type 'Number',
+  caster: (val) -> parseFloat val, 10
+
+Schema.type 'Array',
+  caster: (list) ->
+    return (@memberType.cast member for member in list)

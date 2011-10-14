@@ -9,11 +9,11 @@ Promise:: =
     @callbacks.push [callback, scope]
     @
 
-  fulfill: (val) ->
+  fulfill: ->
     if @value isnt undefined
       throw new Error 'Promise has already been fulfilled'
     @value = val
-    callback.call scope, val for [callback, scope] in @callbacks
+    callback.apply scope, arguments for [callback, scope] in @callbacks
     @callbacks = []
     @
 
