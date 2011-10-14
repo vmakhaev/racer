@@ -5,7 +5,7 @@ MongoQueryBuilder = module.exports = ->
   return
 
 MongoQueryBuilder:: =
-  register: (field, config) ->
+  addField: (field, config) ->
     @fields[field] = if config == true
       'direct'
     else
