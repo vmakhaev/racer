@@ -12,8 +12,6 @@
 #
 # User.source Mongo,
 #   name: Mongo.default
-#   friends: [ref(User)]
-#   bestFriend: ref(User)
 #
 # User.source Mongo,
 #   name: true
@@ -244,6 +242,7 @@ Schema.static
     path = path.substring pivot+1
     return { path, schema: @_schemas[namespace] }
 
+  # Send the oplog to the data sources
   applyOps: (oplog, callback) ->
     sources = @_sources
     remainingSources = sources.length

@@ -1,24 +1,29 @@
-{objEquiv} = require '../util'
+{objEquiv, merge} = require '../util'
+DataSource = require './DataSource'
+# type = require './types'
 
-MongoQueryBuilder = module.exports = ->
-  @fields = {}
+# Important roles are:
+# - Convert oplog to db queries
+MongoSource = module.exports = ->
+  DataSource.apply @, arguments
   return
 
-MongoQueryBuilder:: =
-  addField: (field, config) ->
-    @fields[field] = if config == true
-      'direct'
-    else
-      config
+MongoSource:: = new DataSource()
+merge MongoSource::,
+  _queriesForOps: (oplog) ->
+    queries = []
+    query = {}
+    for op in oplog
+      {conds, method, args} = operation.splat op
+      [query, nextQuery] = @[method] query, conds, args...
+      if nextQuery
+        queries.push @_compileQuery query
+        query = nextQuery
 
-  applyOps: (oplog, callback) ->
-    oplog = @_minifyOps oplog
-    queries = @_queriesForOps oplog
-    remainingQueries = queries.length
-    for {method, args} in queries
-      # e.g., adapter.update {_id: id}, {$set: {name: 'Brian', age: '26'}}, {upsert: true, safe: true}, callback
-      adapter[method] args..., (err) ->
-        --remainingQueries || callback() if callback
+    if query
+      queries.push @_compileQuery query
+
+    return queries
 
   # Better to build a query out of multiple ops using
   # a pre-compiled form; then post-compile the query for
@@ -37,21 +42,6 @@ MongoQueryBuilder:: =
     opts.safe = opts.upsert = true
     args.push query.conds, query.val, opts
     return query
-
-  _queriesForOps: (oplog) ->
-    queries = []
-    query = {}
-    for op in oplog
-      {conds, method, args} = operation.splat op
-      [query, nextQuery] = @[method] query, conds, args...
-      if nextQuery
-        queries.push @_compileQuery query
-        query = nextQuery
-
-    if query
-      queries.push @_compileQuery query
-
-    return queries
 
   # e.g., accomplish optimizations such as collapsing
   # multiple sequental push ops into a single atomic push

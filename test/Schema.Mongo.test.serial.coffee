@@ -24,7 +24,9 @@ User = Schema.extend 'User', 'users',
   # to say that Schema can have a Type interface
 #  group: schema('Group')
 
-User.source Mongo, 'los_users',
+mongo = new Mongo
+# mongo.connect 'mongodb://localhost/racer_test'
+User.source mongo, 'los_users',
   _id: ObjectId
   name: String
   age: Number
@@ -34,18 +36,18 @@ User.source Mongo, 'los_users',
   groupId: schema(Group)._id
 ,
   friends: User.friendIds
-#   # Alt A
-#   friends: User.where('_id').findOne (user) ->
-#     User.where('_id', user.friendIds).find()
-#   # Alt B
-#   friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
+# # Alt A
+# friends: User.where('_id').findOne (user) ->
+#   User.where('_id', user.friendIds).find()
+# # Alt B
+# friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
 
 Group = Schema.extend 'Group', 'groups',
   _id: String
   name: String
 #  users: [User]
 
-Group.source Mongo,
+Group.source mongo,
   _id: ObjectId
   name: String
 ,
@@ -67,7 +69,7 @@ Group.source Mongo,
 #   friendA: friendYId
 #   friendB: friendXId
 # 
-# User.source Mongo, 'los_users',
+# User.source mongo, 'los_users',
 #   _id: Mongo.pkey
 #   # ...
 #   friendIds: [User._id]
@@ -76,32 +78,32 @@ Group.source Mongo,
 #   friends: friendIds
 # 
 # # Scen A - array of refs
-# Blog.source Mongo,
+# Blog.source mongo,
 #   _id: ObjectId
 #   authorIds: [User._id]
 # ,
 #   authors: 'authorIds'
 # 
-# User.source Mongo,
+# User.source mongo,
 #   _id: ObjectId
 # ,
 #   blog: pointedToBy(Blog.authors)
 # 
 # # Scen B - ref
-# Blog.source Mongo,
+# Blog.source mongo,
 #   _id: ObjectId
-# User.source Mongo,
+# User.source mongo,
 #   _id: ObjectId
 #   blogId: Blog._id
 # ,
 #   blog: 'blogId'
 # 
 # # Scen C - Inverse ref
-# Blog.source Mongo,
+# Blog.source mongo,
 #   _id: ObjectId
 #   authorId: schema('User')._id # (*)
 # 
-# User.source Mongo,
+# User.source mongo,
 #   _id: ObjectId
 # ,
 #   blog: Blog.authorId
