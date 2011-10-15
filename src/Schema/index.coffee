@@ -202,8 +202,8 @@ Schema.extend = (name, namespace, config) ->
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
-    type = Schema.inferType descriptor, fieldName
-    SubClass.field fieldName, type.createField()
+    field = Schema.inferType descriptor, fieldName
+    SubClass.field fieldName, field
 
   SubClass.cast = (val) ->
     if val.constructor == Object
@@ -412,20 +412,36 @@ Schema.type = (typeName, config) ->
   return type
 Schema._types = {}
 
-# Factory method returning new Type instances
+# Factory method returning new Field instances
+# generated from factory create new Type instances
 Schema.inferType = (descriptor, fieldName) ->
+  if descriptor.constructor == Object
+    if '$type' of descriptor
+      # e.g.,
+      # username:
+      #   $type: String
+      #   validator: fn
+      field = Schema.inferType descriptor.$type
+      delete descriptor.$type
+      for method, arg of descriptor
+        if Array.isArray arg
+          field[method] arg...
+        else
+          field[method] arg
+        return field
+
   if Array.isArray descriptor
     subType = descriptor[0]
     arrayType = @type 'Array'
     concreteArrayType = Object.create arrayType
     concreteArrayType.memberType = @inferType subType
-    return concreteArrayType
+    return concreteArrayType.createField()
   if descriptor == Number
-    return Object.create @type 'Number'
+    return@type('Number').createField()
   if descriptor == Boolean
-    return Object.create @type 'Boolena'
+    return @type('Boolean').createField()
   if descriptor == String
-    return Object.create @type 'String'
+    return @type('String').createField()
 
   # e.g., descriptor = schema('User')
   if descriptor instanceof Promise
@@ -434,7 +450,7 @@ Schema.inferType = (descriptor, fieldName) ->
     return descriptor
 
   if 'function' == typeof descriptor
-    return descriptor
+    return descriptor.createField()
   throw new Error 'Unsupported descriptor ' + descriptor
 
 Schema.type 'String',

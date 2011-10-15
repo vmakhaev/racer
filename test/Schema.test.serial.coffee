@@ -157,13 +157,26 @@ module.exports =
     done()
 
   # Validation
+  'should be able to specify a validator inside Schema definition': (done) ->
+    Blog = Schema.extend 'User', 'users',
+      username:
+        $type: String
+        validator: (val) ->
+          return true if val.length > 7
+          return 'Username must be more than 7 characters'
+
+    blog = new Blog username: 'short'
+    blog.validate().should.not.be.true
+
+    blog = new Blog username: 'a_valid_username'
+    blog.validate().should.be.true
+    done()
+
   'should be able to specify a validator after initial schema defn': (done) ->
     Blog = Schema.extend 'User', 'users',
       username: String
 
     Blog.field('username').validator (val) ->
-      console.log val
-      console.log val.length
       return true if val.length > 7
       return 'Username must be more than 7 characters'
 
