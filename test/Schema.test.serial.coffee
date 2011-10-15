@@ -187,6 +187,22 @@ module.exports =
     blog.validate().should.be.true
     done()
 
+  'validation declared at the type level should be run': (done) ->
+    Schema.type 'Username',
+      validator: (val) ->
+        return true if val.length > 7
+        return 'Username must be more than 7 characters'
+
+    Blog = Schema.extend 'User', 'users',
+      username: Schema.type 'Username'
+
+    blog = new Blog username: 'short'
+    blog.validate().should.not.be.true
+
+    blog = new Blog username: 'a_valid_username'
+    blog.validate().should.be.true
+    done()
+
   # Querying
   'Schema.findById should callback with the appropriate object': (done) ->
     User = Schema.extend 'User', 'users',

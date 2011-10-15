@@ -107,4 +107,10 @@ Type:: =
   extend: (parentType) -> # TODO
 
   validate: (val) ->
-    (fn val for fn in @validators)
+    errors = []
+    for fn in @validators
+      result = fn val
+      continue if true == result
+      errors.push result
+
+    return if errors.length then errors else true
