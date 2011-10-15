@@ -104,7 +104,7 @@ Type:: =
     @validators.push validator
     return @
 
-  extend: (parentType) -> # TODO
+  extend: (@parentType) ->
 
   validate: (val) ->
     errors = []
@@ -112,5 +112,9 @@ Type:: =
       result = fn val
       continue if true == result
       errors.push result
+
+    if @parentType
+      result = @parentType.validate val
+      errors = errors.concat result unless true == result
 
     return if errors.length then errors else true
