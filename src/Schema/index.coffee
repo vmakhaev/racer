@@ -15,9 +15,6 @@
 #   friends: [ref(User)]
 #   bestFriend: ref(User)
 #
-# User.source Mongo, (mongo) ->
-#   mongo.cover 'name'
-#
 # User.source Mongo,
 #   name: true
 #   friends: [DbRef()]
