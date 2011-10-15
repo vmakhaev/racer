@@ -467,13 +467,3 @@ Schema.type 'Number',
 Schema.type 'Array',
   cast: (list) ->
     return (@memberType.cast member for member in list)
-#
-#Type.extend 'String',
-#  cast: (val) -> val.toString()
-#
-#Type.extend 'Number',
-#  cast: (val) -> parseFloat val, 10
-#
-#Type.extend 'Array',
-#  cast: (list) ->
-#    return (@memberType.cast member for member in list)
