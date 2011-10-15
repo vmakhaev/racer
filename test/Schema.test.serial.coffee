@@ -114,6 +114,67 @@ module.exports =
     user.get('name').should.equal 'Brian'
     done()
 
+  # Casting
+  'logical schema layer should cast String attributes': (done) ->
+    User = Schema.extend 'User', 'users',
+      _id: String
+    s = new User _id: 1
+    s.get('_id').should.equal '1'
+    done()
+
+  'logical schema layer should cast Number attributes': (done) ->
+    User = Schema.extend 'User', 'users',
+      age: Number
+    s = new User age: '26'
+    s.get('age').should.equal 26
+    done()
+
+  'logical schema layer should cast [String] attributes': (done) ->
+    User = Schema.extend 'User', 'users',
+      tags: [String]
+    u = new User tags: [1, 2, 3, 4]
+    u.get('tags').should.eql ['1', '2', '3', '4']
+    done()
+
+  'logical schema layer should cast [Number] attributes': (done) ->
+    User = Schema.extend 'User', 'users',
+      luckyNumbers: [Number]
+    s = new User luckyNumbers: ['4', 8, '12', 16]
+    s.get('luckyNumbers').should.eql [4, 8, 12, 16]
+    done()
+
+  'logical schema layer should cast [CustomSchema] attributes': (done) ->
+    Blog = Schema.extend 'Blog', 'blogs',
+      _id: String
+      name: String
+    User = Schema.extend 'User', 'users',
+      blog: Blog
+    s = new User blog: { _id: 5, name: 'Racer Blog' }
+    blog = s.get('blog')
+    blog.should.be.an.instanceof Blog
+    blog.get('_id').should.equal '5'
+    blog.get('name').should.equal 'Racer Blog'
+    done()
+
+  # Validation
+  'should be able to specify a validator after initial schema defn': (done) ->
+    Blog = Schema.extend 'User', 'users',
+      username: String
+
+    Blog.field('username').validator (val) ->
+      console.log val
+      console.log val.length
+      return true if val.length > 7
+      return 'Username must be more than 7 characters'
+
+    blog = new Blog username: 'short'
+    blog.validate().should.not.be.true
+
+    blog = new Blog username: 'a_valid_username'
+    blog.validate().should.be.true
+    done()
+
+  # Querying
   'Schema.findById should callback with the appropriate object': (done) ->
     User = Schema.extend 'User', 'users',
       name: String

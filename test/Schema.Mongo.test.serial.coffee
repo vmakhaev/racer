@@ -1,14 +1,13 @@
 should = require 'should'
 Mongo = require 'Schema/Mongo'
 {schema} = Schema = require 'Schema'
-schema = -> {}
 
 schema = -> {}
 ObjectId = String
 
-# Blog = Schema.extend 'Blog', 'blogs',
-#   _id: String
-#   name: String
+Blog = Schema.extend 'Blog', 'blogs',
+  _id: String
+  name: String
 
 User = Schema.extend 'User', 'users',
   _id: String
@@ -17,7 +16,7 @@ User = Schema.extend 'User', 'users',
   tags: [String]
   keywords: [String]
   luckyNumbers: [Number]
-#  blog: Blog
+  blog: Blog
 #  friends: [schema('User')]
   # BRIAN: A Schema should be a special Type?
   # But Types only make sense in the context of being used
@@ -108,26 +107,6 @@ Group.source Mongo,
 #   blog: Blog.authorId
 
 module.exports =
-  # Casting
-  'logical schema layer should cast String attributes': (done) ->
-    s = new User _id: 1
-    s.get('_id').should.equal '1'
-    done()
-
-  'logical schema layer should cast Number attributes': (done) ->
-    s = new User age: '26'
-    s.get('age').should.equal 26
-    done()
-
-  'logical schema layer should cast [String] attributes': (done) ->
-    u = new User tags: [1, 2, 3, 4]
-    u.get('tags').should.eql ['1', '2', '3', '4']
-    done()
-
-  'logical schema layer should cast [Number] attributes': (done) ->
-    s = new User luckyNumbers: ['4', 8, '12', 16]
-    s.get('luckyNumbers').should.eql [4, 8, 12, 16]
-    done()
 
   # Query building
   'should create a new update $set query for a single set': (done) ->

@@ -135,33 +135,43 @@
 # # 
 # 
 
-# TODO Re-name @attrs and @_fields for less confusion
+# TODO Re-name @_doc and @_fields for less confusion
 
 Query = require './Query'
 Type = require './Type'
 Promise = require '../Promise'
+{EventEmitter} = require 'events'
+{merge} = require '../util'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
 # attributes, and methods encapsulating business logic.
 Schema = module.exports = ->
+  EventEmitter.call @
   return
 
 Schema._schemas = {}
 Schema._subclasses = []
 Schema.extend = (name, namespace, config) ->
+  ParentClass = @
   SubClass = (attrs, addOps = true) ->
-    # Instead of a dirty tracking object, we keep around an oplog,
-    # which we can leverage better at the Adapter layer - e.g., think
-    # collapsing multiple pushes into a single push in MongoDB
+    # Instead of a dirty tracking object, we keep an oplog,
+    # which we can leverage better at the Adapter layer
+    # - e.g., collapse >1 same-path pushes into 1 push for Mongo
     @oplog = []
-    @attrs = {}
+    @_doc = {}
+
+    # Invoke parent constructors
+    ParentClass.apply @, arguments
 
     if attrs
       for attrName, attrVal of attrs
         # TODO Lazy casting later?
-        type = SubClass._fields[attrName]
-        attrVal = type.cast attrVal
+        field = SubClass._fields[attrName]
+
+        # Cast defined fields; ad hoc fields skip this
+        if field
+          attrVal = field.cast attrVal
         @_assignAttrs attrName, attrVal
         if addOps
           @set attrName, attrVal
@@ -186,10 +196,21 @@ Schema.extend = (name, namespace, config) ->
     SubClass.static name, fn
 
   SubClass._fields = {}
+  SubClass.field = (fieldName, setToField) ->
+    return field if field = @_fields[fieldName]
+    @_fields[fieldName] = setToField
+
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
-    type = @inferType descriptor, fieldName
-    SubClass._fields[fieldName] = type
+    type = Schema.inferType descriptor, fieldName
+    SubClass.field fieldName, type.createField()
+
+  SubClass.cast = (val) ->
+    if val.constructor == Object
+      return new @ val
+    if val instanceof @
+      return val
+    throw new Error 'val is neither an Object nor a ' + @::name
 
   return Schema._schemas[namespace] = SubClass
 
@@ -214,7 +235,7 @@ Schema.static = (name, fn) ->
 # define async flow control for reads/writes
 Schema.static
   _sources: []
-  source: (Source, fieldsConfig) ->
+  source: (Source, ns, fieldsConfig) ->
     adapter = new Source
     @_sources.push adapter
     for field, config of fieldsConfig
@@ -270,8 +291,9 @@ for queryMethodName, queryFn of Query::
       queryFn.apply query, arguments
       return query
 
-Schema:: =
-  _assignAttrs: (name, val, obj = @attrs) ->
+Schema:: = EventEmitter::
+merge Schema::,
+  _assignAttrs: (name, val, obj = @_doc) ->
     if val.constructor == Object
       for k, v of val
         nextObj = obj[name] ||= {}
@@ -286,19 +308,19 @@ Schema:: =
     return obj
 
   set: (attr, val, callback) ->
-    conds = {_id} if _id = @attrs._id
+    conds = {_id} if _id = @_doc._id
     @oplog.push [conds, 'set', attr, val]
     if @_atomic
       @save callback
     return @
 
-  # Get from in-memory local @attrs
+  # Get from in-memory local @_doc
   # TODO Leverage defineProperty or Proxy.create server-side
   get: (attr) ->
-    return @attrs[attr]
+    return @_doc[attr]
 
   del: (attr, callback) ->
-    conds = {_id} if _id = @attrs._id
+    conds = {_id} if _id = @_doc._id
     @oplog.push [conds, 'del', attr]
     if @_atomic
       @save callback
@@ -306,7 +328,7 @@ Schema:: =
 
   # self-destruct
   destroy: (callback) ->
-    conds = {_id} if _id = @attrs._id
+    conds = {_id} if _id = @_doc._id
     @oplog.push [conds, 'destroy']
     @constructor.applyOps oplog, callback
 
@@ -314,7 +336,7 @@ Schema:: =
     if 'function' != typeof callback
       vals.push callback
       callback = null
-    conds = {_id} if _id = @attrs._id
+    conds = {_id} if _id = @_doc._id
     @oplog.push [conds, 'push', attr, vals...]
     if @_atomic
       @save callback
@@ -324,6 +346,14 @@ Schema:: =
     oplog = @oplog
     @oplog = []
     @constructor.applyOps oplog, callback
+
+  validate: ->
+    errors = []
+    for fieldName, field of @constructor._fields
+      result = field.validate(@_doc[fieldName])
+      continue if true == result
+      errors = errors.concat result
+    return if errors.length then errors else true
 
   # We use this when we want to reference a Schema
   # that we have yet to define.
@@ -345,19 +375,23 @@ Schema:: =
 #Schema.sync = SyncSchema
 
 Schema.static 'mixin', (mixin) ->
-  {static, proto} = mixin
+  {init, static, proto} = mixin
   @static static if static
   if proto for k, v of proto
     @::[k] = v
+  @_inits.push init if init
 
 contextMixin = require './mixin.context'
 Schema.mixin contextMixin
 
 actLikeTypeMixin =
   static:
-    # TODO Rename this
-    assignAsTypeToSchemaField: (schema, fieldName) ->
-      schema[fieldName] = @
+    setups: []
+    validators: []
+
+for methodName, method of Type::
+  continue if methodName == 'extend'
+  actLikeTypeMixin.static[methodName] = method
 
 Schema.mixin actLikeTypeMixin
 
@@ -399,20 +433,26 @@ Schema.inferType = (descriptor, fieldName) ->
       promise.fulfill schema, fieldName
     return descriptor
 
-  if 'function' == typeof decriptor
-    SubSchema = ->
-      descriptor.apply @, arguments
-      return
-    SubSchema:: = new descriptor
-    return SubSchema # e.g., other Schemas
+  if 'function' == typeof descriptor
+    return descriptor
   throw new Error 'Unsupported descriptor ' + descriptor
 
 Schema.type 'String',
-  caster: (val) -> val.toString()
+  cast: (val) -> val.toString()
 
 Schema.type 'Number',
-  caster: (val) -> parseFloat val, 10
+  cast: (val) -> parseFloat val, 10
 
 Schema.type 'Array',
-  caster: (list) ->
+  cast: (list) ->
     return (@memberType.cast member for member in list)
+#
+#Type.extend 'String',
+#  cast: (val) -> val.toString()
+#
+#Type.extend 'Number',
+#  cast: (val) -> parseFloat val, 10
+#
+#Type.extend 'Array',
+#  cast: (list) ->
+#    return (@memberType.cast member for member in list)
