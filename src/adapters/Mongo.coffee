@@ -88,6 +88,8 @@ MongoAdapter:: =
   # TODO create (new docs with auto-id's)
   #      Perhaps use "namespace.?.path.val"
 
+  update: (conds, op, opts, callback) ->
+
   set: (path, val, ver, callback) ->
     return @_pending.push ['set', arguments] if @_state != CONNECTED
     [collection, id, path...] = path.split '.'
