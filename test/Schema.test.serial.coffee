@@ -143,7 +143,7 @@ module.exports =
     s.get('luckyNumbers').should.eql [4, 8, 12, 16]
     done()
 
-  'logical schema layer should cast [CustomSchema] attributes': (done) ->
+  'logical schema layer should cast CustomSchema attributes': (done) ->
     Blog = Schema.extend 'Blog', 'blogs',
       _id: String
       name: String
@@ -228,6 +228,8 @@ module.exports =
     blog = new Blog username: 'a_valid_username@gmail.com'
     blog.validate().should.be.true
     done()
+
+  # TODO test inheritance from grandparent types
 
   # TODO interpolate field into validation message
 
