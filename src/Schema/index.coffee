@@ -407,6 +407,8 @@ Schema.mixin actLikeTypeMixin
 Schema.type = (typeName, config) ->
   return type if type = @_types[typeName]
 
+  if parentType = config.extend
+    config.extend = @type parentType unless parentType instanceof Type
   type = @_types[typeName] = new Type typeName, config
 
   return type

@@ -188,18 +188,44 @@ module.exports =
     done()
 
   'validation declared at the type level should be run': (done) ->
-    Schema.type 'Username',
+    Schema.type 'UsernameA',
       validator: (val) ->
         return true if val.length > 7
         return 'Username must be more than 7 characters'
 
     Blog = Schema.extend 'User', 'users',
-      username: Schema.type 'Username'
+      username: Schema.type 'UsernameA'
 
     blog = new Blog username: 'short'
     blog.validate().should.not.be.true
 
     blog = new Blog username: 'a_valid_username'
+    blog.validate().should.be.true
+    done()
+
+  # Type Inheritance
+  'sub-types should inherit their parent type validators': (done) ->
+    Schema.type 'UsernameB',
+      validator: (val) ->
+        return true if val.length > 7
+        return ':fieldName must be more than 7 characters'
+
+    Schema.type 'Email',
+      extend: 'UsernameB'
+      validator: (val) ->
+        return true if /@/.test val
+        return ':fieldName must include a @'
+
+    Blog = Schema.extend 'User', 'users',
+      username: Schema.type 'Email'
+
+    blog = new Blog username: 'short'
+    blog.validate().should.eql [
+      ':fieldName must include a @'
+      ':fieldName must be more than 7 characters'
+    ]
+
+    blog = new Blog username: 'a_valid_username@gmail.com'
     blog.validate().should.be.true
     done()
 
