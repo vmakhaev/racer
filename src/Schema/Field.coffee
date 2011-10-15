@@ -3,7 +3,7 @@ Field = module.exports = (@type) ->
   return
 
 Field:: =
-  cast: (val) -> @type.cast val
+  cast: (val) -> if @type.cast then @type.cast val else val
   validator: (fn) ->
     @validators.push fn
     return @
@@ -14,5 +14,8 @@ Field:: =
       result = fn val
       continue if true == result
       errors.push result
+
+    result = @type.validate val
+    errors = errors.concat result unless true == result
 
     return if errors.length then errors else true

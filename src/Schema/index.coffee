@@ -451,6 +451,9 @@ Schema.inferType = (descriptor, fieldName) ->
 
   if 'function' == typeof descriptor
     return descriptor.createField()
+
+  if descriptor instanceof Type
+    return descriptor.createField()
   throw new Error 'Unsupported descriptor ' + descriptor
 
 Schema.type 'String',
