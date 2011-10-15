@@ -229,7 +229,7 @@ module.exports =
     blog.validate().should.be.true
     done()
 
-  # TODO validation field interpolation
+  # TODO interpolate field into validation message
 
   # Querying
   'Schema.findById should callback with the appropriate object': (done) ->
