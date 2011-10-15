@@ -229,6 +229,8 @@ module.exports =
     blog.validate().should.be.true
     done()
 
+  # TODO validation field interpolation
+
   # Querying
   'Schema.findById should callback with the appropriate object': (done) ->
     User = Schema.extend 'User', 'users',
