@@ -156,6 +156,28 @@ module.exports =
     blog.get('name').should.equal 'Racer Blog'
     done()
 
+  'logical schema layer should cast [CustomSchema] attributes': (done) ->
+    Dog = Schema.extend 'Dog', 'dogs',
+      _id: String
+      name: String
+      age: Number
+    User = Schema.extend 'Blog', 'blogs',
+      dogs: [Dog]
+
+    u = new User dogs: [
+      { _id: 1, name: 'Banana', age: '2'}
+      {_id: 2, name: 'Squeak', age: '8'}
+    ]
+    dogs = u.get 'dogs'
+    dogs.length.should.equal 2
+    for dog in dogs
+      dog.should.be.an.instanceof Dog
+    dogs[0].get('name').should.equal 'Banana'
+    dogs[0].get('age').should.equal 2
+    dogs[1].get('name').should.equal 'Squeak'
+    dogs[1].get('age').should.equal 8
+    done()
+
   # Validation
   'should be able to specify a validator inside Schema definition': (done) ->
     Blog = Schema.extend 'User', 'users',
