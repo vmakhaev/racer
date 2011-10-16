@@ -1,15 +1,11 @@
-{objEquiv, merge} = require '../util'
+{objEquiv} = require '../util'
 DataSource = require './DataSource'
 # type = require './types'
 
 # Important roles are:
 # - Convert oplog to db queries
-MongoSource = module.exports = ->
-  DataSource.apply @, arguments
-  return
-
-MongoSource:: = new DataSource()
-merge MongoSource::,
+# - Define special types specific to the data store (e.g., ObjectId)
+MongoSource = DataSource.extend
   _queriesForOps: (oplog) ->
     queries = []
     query = {}
