@@ -1,3 +1,5 @@
+{merge} = require 'uril'
+
 DataSource = module.exports = ->
   @fields = {}
   return
@@ -17,3 +19,19 @@ DataSource::=
       # e.g., adapter.update {_id: id}, {$set: {name: 'Brian', age: '26'}}, {upsert: true, safe: true}, callback
       adapter[method] args..., (err) ->
         --remainingQueries || callback() if callback
+
+DataSource.extend = (config) ->
+  ParentSource = @
+  ChildSource = ->
+    ParentSource.apply @, arguments
+    return
+
+  ChildSource:: = new @
+  ChildSource::constructor = ChildSource
+
+  merge ChildSource::, config
+
+  ChildSource.extend = DataSource.extend
+
+  return ChildSource
+    
