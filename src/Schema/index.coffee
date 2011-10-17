@@ -305,9 +305,17 @@ for queryMethodName, queryFn of LogicalQuery::
       return queryReturn
 
 Schema:: = EventEmitter::
+Schema::constructor = Schema
 merge Schema::,
   _assignAttrs: (name, val, obj = @_doc) ->
+    Skema = @constructor
     if val.constructor == Object
+      field = Skema._fields[name]
+      type = field.type
+      if 'function' == typeof type
+        # If we have a constructor, most likely Schema
+        obj[name] = new type val
+        return
       for k, v of val
         nextObj = obj[name] ||= {}
         @_assignAttrs k, v, nextObj
@@ -469,11 +477,13 @@ Schema.inferType = (descriptor, fieldName) ->
       promise.fulfill schema, fieldName
     return descriptor
 
+  # If we're a constructor
   if 'function' == typeof descriptor
     return descriptor.createField()
 
   if descriptor instanceof Type
     return descriptor.createField()
+
   throw new Error 'Unsupported descriptor ' + descriptor
 
 Schema.type 'String',
