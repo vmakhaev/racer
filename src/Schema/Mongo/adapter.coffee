@@ -93,6 +93,13 @@ MongoAdapter:: =
   findOne: (collection, conds, opts, callback) ->
     @_collection(collection).findOne conds, opts, callback
 
+  find: (collection, conds, opts, callback) ->
+    @_collection(collection).find conds, opts, (err, cursor) ->
+      return callback err if err
+      cursor.toArray (err, docs) ->
+        return callback err if err
+        return callback null, docs
+
   # Finds or creates the Mongo collection
   _collection: (name) ->
     @_collections[name] ||= new Collection name, @_db
