@@ -325,15 +325,7 @@ merge Schema::,
       obj[name] = val
     else if Array.isArray val
       field = Skema._fields[name]
-      type = field.type
-      memberField = type.memberType
-      memberType = memberField.type
-      if 'function' == typeof memberType
-        # If the memberType is a Schema
-        for member, i in val
-          continue if member instanceof memberType
-          val[i] = new memberType member
-      obj[name] = val
+      obj[name] = field.cast val
     else
       obj[name] = val
     return
@@ -374,6 +366,12 @@ merge Schema::,
       vals.push callback
       callback = null
     arr = @_doc[attr] ||= []
+
+    # TODO DRY - This same code apperas in _assignAttrs
+    # TODO In fact, this may already be part of Field::cast
+    field = @constructor._fields[attr]
+    vals = field.cast vals
+
     arr.push vals...
     conds = {_id} if _id = @_doc._id
     @oplog.push [@constructor.namespace, conds, 'push', attr, vals...]
