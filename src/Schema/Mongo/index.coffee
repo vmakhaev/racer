@@ -87,6 +87,8 @@ MongoSource = module.exports = DataSource.extend
       if ns != qns || qconds isnt undefined
         nextQuery = {}
         [nextQuery] = @set ns, field, nextQuery, conds, path, val, ver
+      else
+        query.val[path] = val
     else
       nextQuery = {}
       [nextQuery] = @set ns, field, nextQuery, conds, path, val, ver
