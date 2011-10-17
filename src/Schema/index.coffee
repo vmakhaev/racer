@@ -171,13 +171,14 @@ Schema.extend = (name, namespace, config) ->
         # Cast defined fields; ad hoc fields skip this
         if field
           attrVal = field.cast attrVal
-        @_assignAttrs attrName, attrVal
         if @isNew
           # TODO Move source defaults out of constructor?
           sources = SubClass._sources
           for source in sources
             source.addDefaults @
           @set attrName, attrVal
+        else
+          @_assignAttrs attrName, attrVal
     return
 
   SubClass:: = prototype = new @()
@@ -320,6 +321,7 @@ merge Schema::,
     return obj
 
   set: (attr, val, callback) ->
+    @_assignAttrs attr, val
     conds = {_id} if _id = @_doc._id
     @oplog.push [@constructor.namespace, conds, 'set', attr, val]
     if @_atomic
@@ -348,6 +350,8 @@ merge Schema::,
     if 'function' != typeof callback
       vals.push callback
       callback = null
+    arr = @_doc[attr] ||= []
+    arr.push vals...
     conds = {_id} if _id = @_doc._id
     @oplog.push [@constructor.namespace, conds, 'push', attr, vals...]
     if @_atomic
@@ -447,10 +451,10 @@ Schema.inferType = (descriptor, fieldName) ->
         return field
 
   if Array.isArray descriptor
-    subType = descriptor[0]
     arrayType = @type 'Array'
+    memberType = descriptor[0]
     concreteArrayType = Object.create arrayType
-    concreteArrayType.memberType = @inferType subType
+    concreteArrayType.memberType = @inferType memberType
     return concreteArrayType.createField()
   if descriptor == Number
     return@type('Number').createField()

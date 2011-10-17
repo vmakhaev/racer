@@ -9,10 +9,10 @@ MongoSource = module.exports = DataSource.extend
   AdapterClass: require './adapter'
   inferType: (descriptor) ->
     if Array.isArray descriptor
-      subType = descriptor[0]
       arrayType = types['Array']
-      # TODO Associate member type with array type
-      throw new Error 'Unimplemented'
+      memberType = descriptor[0]
+      concreteArrayType = Object.create arrayType
+      concreteArrayType.memberType = @inferType memberType
     if type = types[descriptor.name]
       return type
     # else String, Number etc
@@ -108,16 +108,16 @@ MongoSource = module.exports = DataSource.extend
         # conditions of the existing query do not match the incoming
         # op conditions. In both cases, we must create a new query
         nextQuery = {}
-        [nextQuery] = @set nextQuery, conds, path, val, ver
+        [nextQuery] = @del ns, field, nextQuery, conds, path, val, ver
     else
       # The current query involves
       nextQuery = {}
-      [nextQuery] = @set nextQuery, conds, path, val, ver
+      [nextQuery] = @del ns, field, nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
   push: (ns, field, query, conds, path, values...) ->
     # Assign or augment query.(method|conds|val)
-    {method: qmethod, conds: qconds} = query
+    {ns: qns, method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
       query.method = 'update'
       query.conds = conds
@@ -141,22 +141,29 @@ MongoSource = module.exports = DataSource.extend
             delete query.val.$push
           else
             nextQuery = {}
-            [nextQuery] = @push nextQuery, conds, path, values...
+            [nextQuery] = @push ns, field, nextQuery, conds, path, values...
         else if query.val.$pushAll
           nextQuery = {}
-          [nextQuery] = @push nextQuery, conds, path, values...
+          [nextQuery] = @push ns, field, nextQuery, conds, path, values...
         else
           # Then the prior ops involved something like $set
           nextQuery = {}
-          [nextQuery] = @push nextQuery, conds, path, values...
+          [nextQuery] = @push ns, field, nextQuery, conds, path, values...
       else
         # Current building query involves conditions not equal to
         # current op conditions, so create a new query
         nextQuery = {}
-        [nextQuery] = @push nextQuery, conds, path, values...
+        [nextQuery] = @push ns, field, nextQuery, conds, path, values...
+    else if qmethod == 'insert'
+      if ns != qns
+        nextQuery = {}
+        [nextQuery] = @push ns, field, nextQuery, conds, path, values...
+      else
+        arr = query.val[path] ||= []
+        arr.push values...
     else
       nextQuery = {}
-      [nextQuery] = @push nextQuery, conds, path, val, ver
+      [nextQuery] = @push ns, field, nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
   pop: (ns, field, query, path, values..., ver) ->

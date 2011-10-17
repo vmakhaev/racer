@@ -17,3 +17,9 @@ exports.ObjectId =
   toString: (oid) ->
     return NativeObjectId.toString() unless arguments.length
     return oid.toHexString()
+
+exports.Array =
+  name: 'Array'
+  
+  cast: (list) ->
+    return (@memberType.cast member for member in list)
