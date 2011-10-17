@@ -38,7 +38,7 @@ module.exports =
       _id: ObjectId
       name: String
     #  age: Number
-    #  tags: [String]
+      tags: [String]
     #  keywords: [String]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
@@ -127,7 +127,7 @@ module.exports =
       mongo.disconnect()
       done()
 
-  'primary key _id should be created on saving a new doc @single': (done) ->
+  'primary key _id should be created on saving a new doc': (done) ->
     u = new User name: 'Brian'
     u.save (err, u) ->
       should.equal null, err
@@ -137,7 +137,7 @@ module.exports =
       _id.length.should.equal 24
       done()
 
-  'should be able to retrieve a document after creating it @single': (done) ->
+  'should be able to retrieve a document after creating it': (done) ->
     User.create name: 'Brian', (err, createdUser) ->
       should.equal null, err
       User.findOne
@@ -149,7 +149,7 @@ module.exports =
         foundUser.get('name').should.equal 'Brian'
         done()
 
-  'should be able to retrieve > 1 docs after creating them @single': (done) ->
+  'should be able to retrieve > 1 docs after creating them': (done) ->
     User.create name: 'Brian', (err, userOne) ->
       should.equal null, err
       User.create name: 'Brian', (err, userTwo) ->
@@ -160,6 +160,17 @@ module.exports =
           found[0].get('_id').should.equal userOne.get('_id')
           found[1].get('_id').should.equal userTwo.get('_id')
           done()
+
+  'should persist a single push onto a document array field @single': (done) ->
+    u = new User name: 'Brian'
+    u.push 'tags', 'nodejs'
+    u.save (err, createdUser) ->
+      should.equal null, err
+      createdUser.get('tags').should.eql ['nodejs']
+      User.findOne _id: createdUser.get('_id'), (err, foundUser) ->
+        should.equal null, err
+        foundUser.get('tags').should.eql ['nodejs']
+        done()
 
   # Query building
   'should create a new update $set query for a single set': (done) ->
