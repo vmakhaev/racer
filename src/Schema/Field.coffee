@@ -1,3 +1,8 @@
+# Encapsulates the configuration of a field in a logical schema.
+# A field is a declared attribute on a custom Schema that is associated with a type
+# and configuration specific to the association of the type to this attribute -- e.g.,
+# custom validations.
+
 Field = module.exports = (@type) ->
   @validators = []
   return
