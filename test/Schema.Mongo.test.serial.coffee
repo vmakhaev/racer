@@ -161,7 +161,7 @@ module.exports =
           found[1].get('_id').should.equal userTwo.get('_id')
           done()
 
-  'should persist a single push onto a document array field @single': (done) ->
+  'should persist a single push onto a document array field': (done) ->
     u = new User name: 'Brian'
     u.push 'tags', 'nodejs'
     u.save (err, createdUser) ->
@@ -172,10 +172,21 @@ module.exports =
         foundUser.get('tags').should.eql ['nodejs']
         done()
 
-  'should persist multiple single pushes onto a document array field @single': (done) ->
+  'should persist multiple single pushes onto a document array field': (done) ->
     u = new User name: 'Brian'
     u.push 'tags', 'nodejs'
     u.push 'tags', 'sf'
+    u.save (err, createdUser) ->
+      should.equal null, err
+      createdUser.get('tags').should.eql ['nodejs', 'sf']
+      User.findOne _id: createdUser.get('_id'), (err, foundUser) ->
+        should.equal null, err
+        foundUser.get('tags').should.eql ['nodejs', 'sf']
+        done()
+
+  'should persist a single multiple member push onto a document array field @single': (done) ->
+    u = new User name: 'Brian'
+    u.push 'tags', 'nodejs', 'sf'
     u.save (err, createdUser) ->
       should.equal null, err
       createdUser.get('tags').should.eql ['nodejs', 'sf']
