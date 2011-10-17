@@ -232,13 +232,33 @@ module.exports =
         done()
 
   # Embedded documents
-  '''setting a field that maps to another Schema should assign
-  an instance of that Schema to the document attribute of the same name @single''': (done) ->
+  '''setting to an object literal, a field that maps to a Schema should assign
+  an instance of that Schema to the document attribute of the same name''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.get('pet').should.be.an.instanceof Dog
     u.get('pet').get('name').should.equal 'Banana'
     done()
+
+  '''setting to a Schema instance, a field that maps to a Schema should assign
+  that Schema instance directly @single''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pet', new Dog name: 'Banana'
+    u.get('pet').should.be.an.instanceof Dog
+    u.get('pet').get('name').should.equal 'Banana'
+    done()
+
+  '''setting to a non-matching Schema instance, a field that maps to another
+  Schema should raise an error @single''': (done) ->
+    u = new User name: 'Brian'
+    didErr = false
+    try
+      u.set 'pet', new User name: 'Brian'
+    catch e
+      didErr = true
+    didErr.should.be.true
+    done()
+
 
   '''should properly persist a relation specified as an embedded document
   and set as an object literal''': (done) ->
