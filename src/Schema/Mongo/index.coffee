@@ -6,7 +6,13 @@ types = require './types'
 # - Convert oplog to db queries
 # - Define special types specific to the data store (e.g., ObjectId)
 MongoSource = module.exports = DataSource.extend
+
+  # The layer of abstraction that deals with db-specific commands
   AdapterClass: require './adapter'
+
+  # Where the magical interpretation happens of the right-hand-side vals
+  # of attributes in config of
+  #     CustomSchema.source source, ns, config
   inferType: (descriptor) ->
     if Array.isArray descriptor
       arrayType = types['Array']
@@ -15,7 +21,8 @@ MongoSource = module.exports = DataSource.extend
       concreteArrayType.memberType = @inferType memberType
     if type = types[descriptor.name]
       return type
-    # else String, Number etc
+
+    # else String, Number, Object => Take things as they are
     return {}
 
   _queriesForOps: (oplog) ->

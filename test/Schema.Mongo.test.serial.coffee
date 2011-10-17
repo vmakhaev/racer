@@ -3,15 +3,28 @@ Mongo = require 'Schema/Mongo'
 mongo = null
 Schema = require 'Schema'
 Blog = null
+Dog = null
 User = null
 Group = null
 
 module.exports =
   setup: (done) ->
+    mongo = new Mongo
+    mongo.connect 'mongodb://localhost/racer_test'
+    {ObjectId} = require 'Schema/Mongo/types'
+
     Blog = Schema.extend 'Blog', 'blogs',
       _id: String
       name: String
     Blog._sources = []
+
+    Dog = Schema.extend 'Dog', 'dogs',
+      _id: String
+      name: String
+
+    Dog.source mongo, 'dogs',
+      _id: ObjectId
+      name: String
 
     User = Schema.extend 'User', 'users',
       _id: String
@@ -20,7 +33,8 @@ module.exports =
       tags: [String]
       keywords: [String]
       luckyNumbers: [Number]
-      blog: Blog
+      pet: Dog
+    # blog: Blog
     #  friends: [schema('User')]
       # BRIAN: A Schema should be a special Type?
       # But Types only make sense in the context of being used
@@ -29,9 +43,6 @@ module.exports =
     #  group: schema('Group')
     User._sources = []
 
-    mongo = new Mongo
-    mongo.connect 'mongodb://localhost/racer_test'
-    {ObjectId} = require 'Schema/Mongo/types'
     # mongo.connect 'mongodb://localhost/racer_test'
     #User.source mongo, 'los_users',
     User.source mongo, 'users',
@@ -39,6 +50,7 @@ module.exports =
       name: String
       age: Number
       tags: [String]
+      pet: Object
     #  keywords: [String]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
@@ -162,7 +174,7 @@ module.exports =
           found[1].get('_id').should.equal userTwo.get('_id')
           done()
 
-  'a found document should not initially have an oplog @single': (done) ->
+  'a found document should not initially have an oplog': (done) ->
     User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.findOne
@@ -172,7 +184,7 @@ module.exports =
         foundUser.oplog.should.be.empty
         done()
 
-  'array of found documents should not initially have an oplog @single': (done) ->
+  'array of found documents should not initially have an oplog': (done) ->
     User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.create name: 'Brian', age: 26, (err, createdUser) ->
@@ -217,6 +229,33 @@ module.exports =
       User.findOne _id: createdUser.get('_id'), (err, foundUser) ->
         should.equal null, err
         foundUser.get('tags').should.eql ['nodejs', 'sf']
+        done()
+
+  # Embedded documents
+  '''setting a field that maps to another Schema should assign
+  an instance of that Schema to the document attribute of the same name @single''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pet', name: 'Banana'
+    u.get('pet').should.be.an.instanceof Dog
+    u.get('pet').get('name').should.equal 'Banana'
+    done()
+
+  '''should properly persist a relation specified as an embedded document
+  and set as an object literal''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pet', name: 'Banana'
+    u.save (err, createdUser) ->
+      should.equal null, err
+      _id = createdUser.get '_id'
+      dogId = createdUser.get('pet').get('_id')
+      mongo.adapter.findOne 'users', {_id}, { safe: true }, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: _id
+          name: 'Brian'
+          dog:
+            _id: dogId
+            name: 'Banana'
         done()
 
   # Query building

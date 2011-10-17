@@ -23,3 +23,8 @@ exports.Array =
   
   cast: (list) ->
     return (@memberType.cast member for member in list)
+
+# Object means an embedded document or the member of an embedded 
+# array if this is a recursive inferType call
+exports.Object =
+  name: 'Object'
