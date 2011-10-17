@@ -149,6 +149,18 @@ module.exports =
         foundUser.get('name').should.equal 'Brian'
         done()
 
+  'should be able to retrieve > 1 docs after creating them @single': (done) ->
+    User.create name: 'Brian', (err, userOne) ->
+      should.equal null, err
+      User.create name: 'Brian', (err, userTwo) ->
+        should.equal null, err
+        User.find name: 'Brian', (err, found) ->
+          should.equal null, err
+          found.length.should.equal 2
+          found[0].get('_id').should.equal userOne.get('_id')
+          found[1].get('_id').should.equal userTwo.get('_id')
+          done()
+
   # Query building
   'should create a new update $set query for a single set': (done) ->
     addOp = false

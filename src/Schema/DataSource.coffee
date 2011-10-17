@@ -73,6 +73,25 @@ DataSource::=
         json[path] = resField.cast val if resField.cast
       callback null, json
 
+  find: (ns, conditions, callback) ->
+    nsFields = @fields[ns]
+    # 1. Cast the query conditions
+    for path, val of conditions
+      condField = nsFields[path]
+      conditions[path] = condField.cast val if condField.cast
+    # 2. Dispatch the query to the data adapter
+    return @adapter.find ns, conditions, {}, (err, array) ->
+      return callback err if err
+      return callback null, [] unless array.length
+      # TODO Should we have a separate Data Source Schema document, distinguishable from the Logical Schema?
+      arr = []
+      for json in array
+        for path, val of json
+          resField = nsFields[path]
+          json[path] = resField.cast val if resField.cast
+        arr.push json
+      return callback null, arr
+
 DataSource.extend = (config) ->
   ParentSource = @
   ChildSource = ->
