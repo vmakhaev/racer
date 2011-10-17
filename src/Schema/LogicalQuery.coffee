@@ -13,7 +13,14 @@ LogicalQuery:: =
 
   find: (criteria, callback) ->
     @queryMethod = 'find'
-    throw new Error 'Unimplmented'
+    if 'function' == typeof criteria
+      callback = criteria
+      criteria = null
+    else if criteria.constructor == Object
+      merge @_conditions, criteria
+
+    return @ unless callback
+    return @fire callback
 
   findOne: (criteria, callback) ->
     @queryMethod = 'findOne'
@@ -46,8 +53,11 @@ LogicalQuery:: =
       promise = new Promise
       promise.bothback callback
       source[queryMethod] ns, @_conditions, (err, castedJson) ->
-        doc = new Skema castedJson
-        return promise.resolve null, doc
+        if Array.isArray castedJson
+          result = (new Skema castedMem for castedMem in castedJson)
+        else
+          result = new Skema castedJson
+        return promise.resolve null, result
       return promise
 
     promises = []
@@ -59,7 +69,7 @@ LogicalQuery:: =
     compositePromise.bothback callback
     return compositePromise
 
-  # Binds this query to a Schema document
+  # Binds this query to a CustomSchema
   bind: (schema) ->
     boundQuery = Object.create @
     boundQuery.schema = schema
