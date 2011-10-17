@@ -172,6 +172,18 @@ module.exports =
         foundUser.get('tags').should.eql ['nodejs']
         done()
 
+  'should persist multiple single pushes onto a document array field @single': (done) ->
+    u = new User name: 'Brian'
+    u.push 'tags', 'nodejs'
+    u.push 'tags', 'sf'
+    u.save (err, createdUser) ->
+      should.equal null, err
+      createdUser.get('tags').should.eql ['nodejs', 'sf']
+      User.findOne _id: createdUser.get('_id'), (err, foundUser) ->
+        should.equal null, err
+        foundUser.get('tags').should.eql ['nodejs', 'sf']
+        done()
+
   # Query building
   'should create a new update $set query for a single set': (done) ->
     addOp = false
