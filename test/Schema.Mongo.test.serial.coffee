@@ -308,6 +308,20 @@ module.exports =
     pets[1].get('name').should.equal 'Squeak'
     done()
 
+  '''pushing an object literal onto a field that maps to [Schema] should convert
+  the object literal into a Schema document and append it to the attribute @single''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+    u.push 'pets', {name: 'Pogo'}
+    pets = u.get('pets')
+    pets.should.have.length 3
+    for pet in pets
+      pet.should.be.an.instanceof Dog
+    pets[0].get('name').should.equal 'Banana'
+    pets[1].get('name').should.equal 'Squeak'
+    pets[2].get('name').should.equal 'Pogo'
+    done()
+
 
   # Query building
   'should create a new update $set query for a single set': (done) ->
