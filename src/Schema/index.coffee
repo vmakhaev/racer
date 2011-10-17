@@ -319,6 +319,12 @@ merge Schema::,
       for k, v of val
         nextObj = obj[name] ||= {}
         @_assignAttrs k, v, nextObj
+    else if val instanceof Schema
+      field = Skema._fields[name]
+      type = field.type
+      unless val instanceof type
+        throw new Error "Trying to assign #{val} to a #{type.name} attribute"
+      obj[name] = val
     else
       obj[name] = val
     return
