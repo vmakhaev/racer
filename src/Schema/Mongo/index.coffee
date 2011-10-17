@@ -1,17 +1,31 @@
-{objEquiv} = require '../util'
-DataSource = require './DataSource'
-# type = require './types'
+{objEquiv} = require '../../util'
+DataSource = require '../DataSource'
+types = require './types'
 
 # Important roles are:
 # - Convert oplog to db queries
 # - Define special types specific to the data store (e.g., ObjectId)
-MongoSource = DataSource.extend
+MongoSource = module.exports = DataSource.extend
+  AdapterClass: require './adapter'
+  inferType: (descriptor) ->
+    if Array.isArray descriptor
+      subType = descriptor[0]
+      arrayType = types['Array']
+      # TODO Associate member type with array type
+      throw new Error 'Unimplemented'
+    if type = types[descriptor.name]
+      return type
+    # else String, Number etc
+    return {}
+
   _queriesForOps: (oplog) ->
     queries = []
     query = {}
     for op in oplog
-      {conds, method, args} = operation.splat op
-      [query, nextQuery] = @[method] query, conds, args...
+      {ns, conds, method, path, args} = operation.splat op
+      # TODO Handle nested paths
+      continue unless field = @fields[ns][path]
+      [query, nextQuery] = @[method] ns, field, query, conds, args...
       if nextQuery
         queries.push @_compileQuery query
         query = nextQuery
@@ -25,18 +39,22 @@ MongoSource = DataSource.extend
   # a pre-compiled form; then post-compile the query for
   # use by the adapter once the query is done being built.
   # Pre-compiled will look like:
+  #   query.ns
   #   query.method
   #   query.conds
   #   query.val
   #   query.opts
   # Post-compiled will look like:
   #   query.method
-  #   query.args = [query.conds, query.val, query.opts]
+  #   query.args = [query.ns, query.conds, query.val, query.opts]
   _compileQuery: (query) ->
-    args = query.args = []
+    args = query.args = [query.ns]
     opts = query.opts ||= {}
-    opts.safe = opts.upsert = true
-    args.push query.conds, query.val, opts
+    opts.safe = true
+    if query.method == 'update'
+      opts.upsert = true
+      args.push query.conds
+    args.push query.val, opts
     return query
 
   # e.g., accomplish optimizations such as collapsing
@@ -44,26 +62,37 @@ MongoSource = DataSource.extend
   _minifyOps: (oplog) -> oplog
 
   # TODO Better lang via MongoQueryBuilder.handle 'set', (...) -> ?
-  set: (query, conds, path, val, ver) ->
+  set: (ns, field, query, conds, path, val, ver) ->
+    val = field.cast val if field.cast
+
     # Assign or augment query.(method|conds|val)
-    {method: qmethod, conds: qconds} = query
+    {ns: qns, method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
-      query.method = 'update'
-      query.conds = conds
-      (delta = {})[path] = val
-      query.val = { $set: delta }
+      query.ns = ns
+      if query.conds = conds
+        query.method = 'update'
+        (delta = {})[path] = val
+        query.val = { $set: delta }
+      else
+        query.method = 'insert'
+        query.val = query.val = {}
+        query.val[path] = val
     else if qmethod == 'update'
       if (delta = query.val.$set) && objEquiv qconds, conds
         delta[path] = val
       else
         nextQuery = {}
-        [nextQuery] = @set nextQuery, conds, path, val, ver
+        [nextQuery] = @set ns, field, nextQuery, conds, path, val, ver
+    else if qmethod == 'insert'
+      if ns != qns || qconds isnt undefined
+        nextQuery = {}
+        [nextQuery] = @set ns, field, nextQuery, conds, path, val, ver
     else
       nextQuery = {}
-      [nextQuery] = @set nextQuery, conds, path, val, ver
+      [nextQuery] = @set ns, field, nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
-  del: (query, conds, path) ->
+  del: (ns, field, query, conds, path) ->
     # Assign or augment query.(method|conds|val)
     {method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
@@ -86,7 +115,7 @@ MongoSource = DataSource.extend
       [nextQuery] = @set nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
-  push: (query, conds, path, values...) ->
+  push: (ns, field, query, conds, path, values...) ->
     # Assign or augment query.(method|conds|val)
     {method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
@@ -130,7 +159,8 @@ MongoSource = DataSource.extend
       [nextQuery] = @push nextQuery, conds, path, val, ver
     return [query, nextQuery]
 
-  pop: (query, path, values..., ver) ->
+  pop: (ns, field, query, path, values..., ver) ->
+    throw new Error 'Unimplemented'
 
 operation =
-  splat: ([conds, method, args...]) -> {conds, method, args}
+  splat: ([namespace, conds, method, args...]) -> {ns: namespace, conds, method, path: args[0], args}

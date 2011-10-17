@@ -73,6 +73,7 @@ Field = require './Field'
 Type = module.exports = (name, config) ->
   @setups = []
   @validators = []
+  @name = name
 
   for method, arg of config
     if method == 'cast'
