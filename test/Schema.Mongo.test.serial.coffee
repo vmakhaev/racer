@@ -37,7 +37,7 @@ module.exports =
     User.source mongo, 'users',
       _id: ObjectId
       name: String
-    #  age: Number
+      age: Number
       tags: [String]
     #  keywords: [String]
     #  friendIds: [User._id]
@@ -137,16 +137,17 @@ module.exports =
       _id.length.should.equal 24
       done()
 
-  'should be able to retrieve a document after creating it': (done) ->
-    User.create name: 'Brian', (err, createdUser) ->
+  'should be able to retrieve a document after creating it @single': (done) ->
+    User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.findOne
         _id: createdUser.get '_id'
       , (err, foundUser) ->
         should.equal null, err
-        for path in ['_id', 'name']
+        for path in ['_id', 'name', 'age']
           foundUser.get(path).should.equal createdUser.get(path)
         foundUser.get('name').should.equal 'Brian'
+        foundUser.get('age').should.equal 26
         done()
 
   'should be able to retrieve > 1 docs after creating them': (done) ->
@@ -184,7 +185,7 @@ module.exports =
         foundUser.get('tags').should.eql ['nodejs', 'sf']
         done()
 
-  'should persist a single multiple member push onto a document array field @single': (done) ->
+  'should persist a single multiple member push onto a document array field': (done) ->
     u = new User name: 'Brian'
     u.push 'tags', 'nodejs', 'sf'
     u.save (err, createdUser) ->
