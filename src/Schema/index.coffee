@@ -132,7 +132,7 @@
 
 # TODO Re-name @_doc and @_fields for less confusion
 
-Query = require './Query'
+LogicalQuery = require './LogicalQuery'
 Type = require './Type'
 Promise = require '../Promise'
 {EventEmitter} = require 'events'
@@ -149,7 +149,11 @@ Schema._schemas = {}
 Schema._subclasses = []
 Schema.extend = (name, namespace, config) ->
   ParentClass = @
-  SubClass = (attrs, addOps = true) ->
+  # Constructor
+  # @param {Object} attrs maps path names to values
+  # @param {Boolean} isNew; will be false when populating this from the
+  #                  results of a Query
+  SubClass = (attrs, @isNew = true) ->
     # Instead of a dirty tracking object, we keep an oplog,
     # which we can leverage better at the Adapter layer
     # - e.g., collapse >1 same-path pushes into 1 push for Mongo
@@ -168,14 +172,19 @@ Schema.extend = (name, namespace, config) ->
         if field
           attrVal = field.cast attrVal
         @_assignAttrs attrName, attrVal
-        if addOps
+        if @isNew
+          # TODO Move source defaults out of constructor?
+          sources = SubClass._sources
+          for source in sources
+            source.addDefaults @
           @set attrName, attrVal
     return
 
   SubClass:: = prototype = new @()
   prototype.constructor = SubClass
-  prototype.name = name
-  prototype.namesapce = namespace
+
+  SubClass.name = name
+  SubClass.namespace = namespace
 
   SubClass._subclasses = []
   SubClass._superclass = @
@@ -230,12 +239,12 @@ Schema.static = (name, fn) ->
 # define async flow control for reads/writes
 Schema.static
   _sources: []
-  source: (Source, ns, fieldsConfig) ->
-    adapter = new Source
-    @_sources.push adapter
-    for field, config of fieldsConfig
-      # Setup handlers in adapter
-      adapter.addField field, config
+  source: (source, ns, fieldsConfig) ->
+    @_sources.push source
+    source.schemas[ns] = @
+    for field, descriptor of fieldsConfig
+      # Setup handlers in the data source
+      source.addField @, field, descriptor
   fromPath: (path) ->
     pivot = path.indexOf '.'
     namespace = path.substring 0, pivot
@@ -243,27 +252,33 @@ Schema.static
     return { path, schema: @_schemas[namespace] }
 
   # Send the oplog to the data sources
-  applyOps: (oplog, callback) ->
+  applyOps: (oplog, callback, doc) ->
     sources = @_sources
     remainingSources = sources.length
     for source in sources
-      # Send oplog to all adapters. Adapters can choose to ignore 
+      # Send oplog to all data sources. Data sources can choose to ignore 
       # the query if it's not relevant to it, or it can choose to 
       # execute the oplog selectively. How does this fit in with STM?
       # We need to have a rollback mechanism
-      source.applyOps oplog, ->
-        --remainingSources || callback()
+      source.applyOps oplog, (err, extraAttrs) =>
+        --remainingSources
+        return callback err if err
+        if extraAttrs
+          for attrName, attrVal of extraAttrs
+            doc._doc[attrName] = attrVal
+        unless remainingSources
+          callback err, doc
 
   create: (attrs, callback) ->
     obj = new @(attrs)
     obj.save callback
 
   update: (conds, attrs, callback) ->
-    oplog = ([conds, path, 'set', val] for path, val of attrs)
+    oplog = ([@namespace, conds, 'set', path, val] for path, val of attrs)
     @applyOps oplog, callback
 
   destroy: (conds, callback) ->
-    oplog = [ [conds] ]
+    oplog = [ [@namespace, conds] ]
     @applyOps oplog, callback
 
   findById: (id, callback) ->
@@ -271,8 +286,9 @@ Schema.static
     @query query, callback
 
   query: (query, callback) ->
-    # Compile query into a set of adapter queries
+    # Compile query into a set of data source queries
     # with the proper async flow control.
+    throw new Error 'Undefined'
 
   plugin: (plugin, opts) ->
     plugin @, opts
@@ -280,12 +296,12 @@ Schema.static
 
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., Schema.find, Schema.findOne, etc
-for queryMethodName, queryFn of Query::
+for queryMethodName, queryFn of LogicalQuery::
   do (queryFn) ->
     Schema.static queryMethodName, ->
-      query = new Query
-      queryFn.apply query, arguments
-      return query
+      query = (new LogicalQuery).bind @
+      queryReturn = queryFn.apply query, arguments
+      return queryReturn
 
 Schema:: = EventEmitter::
 merge Schema::,
@@ -305,7 +321,7 @@ merge Schema::,
 
   set: (attr, val, callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [conds, 'set', attr, val]
+    @oplog.push [@constructor.namespace, conds, 'set', attr, val]
     if @_atomic
       @save callback
     return @
@@ -317,7 +333,7 @@ merge Schema::,
 
   del: (attr, callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [conds, 'del', attr]
+    @oplog.push [@constructor.namespace, conds, 'del', attr]
     if @_atomic
       @save callback
     return @
@@ -325,7 +341,7 @@ merge Schema::,
   # self-destruct
   destroy: (callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [conds, 'destroy']
+    @oplog.push [@constructor.namespace, conds, 'destroy']
     @constructor.applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
@@ -333,15 +349,17 @@ merge Schema::,
       vals.push callback
       callback = null
     conds = {_id} if _id = @_doc._id
-    @oplog.push [conds, 'push', attr, vals...]
+    @oplog.push [@constructor.namespace, conds, 'push', attr, vals...]
     if @_atomic
       @save callback
     return @
 
+  # @param {Function} callback(err, document)
   save: (callback) ->
     oplog = @oplog
     @oplog = []
-    @constructor.applyOps oplog, callback
+    Skema = @constructor
+    Skema.applyOps oplog, callback, @
 
   validate: ->
     errors = []
