@@ -323,6 +323,17 @@ merge Schema::,
       unless val instanceof type
         throw new Error "Trying to assign #{val} to a #{type.name} attribute"
       obj[name] = val
+    else if Array.isArray val
+      field = Skema._fields[name]
+      type = field.type
+      memberField = type.memberType
+      memberType = memberField.type
+      if 'function' == typeof memberType
+        # If the memberType is a Schema
+        for member, i in val
+          continue if member instanceof memberType
+          val[i] = new memberType member
+      obj[name] = val
     else
       obj[name] = val
     return

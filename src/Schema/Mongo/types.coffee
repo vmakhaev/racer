@@ -26,5 +26,6 @@ exports.Array =
 
 # Object means an embedded document or the member of an embedded 
 # array if this is a recursive inferType call
+# TODO Can we remove this?
 exports.Object =
   name: 'Object'

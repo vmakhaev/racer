@@ -35,6 +35,7 @@ module.exports =
       keywords: [String]
       luckyNumbers: [Number]
       pet: Dog
+      pets: [Dog]
     # blog: Blog
     #  friends: [schema('User')]
       # BRIAN: A Schema should be a special Type?
@@ -52,6 +53,7 @@ module.exports =
       age: Number
       tags: [String]
       pet: Object
+      pets: [Object]
     #  keywords: [String]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
@@ -262,7 +264,7 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal @single''': (done) ->
+  and set as an object literal''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -280,7 +282,7 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded document
-  as the configured logical schema relation @single''': (done) ->
+  as the configured logical schema relation''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -292,6 +294,20 @@ module.exports =
         dog.should.be.an.instanceof Dog
         foundUser.get('pet').get('name').should.equal 'Banana'
         done()
+
+  # Embedded Array documents
+  '''setting to an array of object literals, a field that maps to [Schema] should assign
+  an array of Schema instances to the document attribute of the same name @single''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+    pets = u.get('pets')
+    pets.should.have.length 2
+    for pet in pets
+      pet.should.be.an.instanceof Dog
+    pets[0].get('name').should.equal 'Banana'
+    pets[1].get('name').should.equal 'Squeak'
+    done()
+
 
   # Query building
   'should create a new update $set query for a single set': (done) ->
