@@ -1,114 +1,153 @@
 should = require 'should'
 Mongo = require 'Schema/Mongo'
-{schema} = Schema = require 'Schema'
-
-schema = -> {}
-ObjectId = String
-
-Blog = Schema.extend 'Blog', 'blogs',
-  _id: String
-  name: String
-
-User = Schema.extend 'User', 'users',
-  _id: String
-  name: String
-  age: Number
-  tags: [String]
-  keywords: [String]
-  luckyNumbers: [Number]
-  blog: Blog
-#  friends: [schema('User')]
-  # BRIAN: A Schema should be a special Type?
-  # But Types only make sense in the context of being used
-  # in a Schema definition. So perhaps, it is more accurate
-  # to say that Schema can have a Type interface
-#  group: schema('Group')
-
-mongo = new Mongo
-# mongo.connect 'mongodb://localhost/racer_test'
-User.source mongo, 'los_users',
-  _id: ObjectId
-  name: String
-  age: Number
-  tags: [String]
-  keywords: [String]
-  friendIds: [User._id]
-  groupId: schema(Group)._id
-,
-  friends: User.friendIds
-# # Alt A
-# friends: User.where('_id').findOne (user) ->
-#   User.where('_id', user.friendIds).find()
-# # Alt B
-# friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
-
-Group = Schema.extend 'Group', 'groups',
-  _id: String
-  name: String
-#  users: [User]
-
-Group.source mongo,
-  _id: ObjectId
-  name: String
-,
-  users: [User.groupId]
-#   users: [User.groupId.pointingTo.me]
-#   users: User.find().where('groupId') # Curries fn User.where('groupId', thisGroupId)
-#   users: curry User.find().where, 'groupId'
-
-#   # Using join table
-#   friends: [schema('FriendsJoin').friendA]
-# 
-# # (*)
-# # users                             users
-# # me <---[friendAId, friendBId]---> me.friends 
-# Mongo.schema.join 'FriendsJoin', 'friends_join',
-#   friendXId: User._id
-#   friendYId: User._id
-# ,
-#   friendA: friendYId
-#   friendB: friendXId
-# 
-# User.source mongo, 'los_users',
-#   _id: Mongo.pkey
-#   # ...
-#   friendIds: [User._id]
-#   blogId: Blog._id
-# ,
-#   friends: friendIds
-# 
-# # Scen A - array of refs
-# Blog.source mongo,
-#   _id: ObjectId
-#   authorIds: [User._id]
-# ,
-#   authors: 'authorIds'
-# 
-# User.source mongo,
-#   _id: ObjectId
-# ,
-#   blog: pointedToBy(Blog.authors)
-# 
-# # Scen B - ref
-# Blog.source mongo,
-#   _id: ObjectId
-# User.source mongo,
-#   _id: ObjectId
-#   blogId: Blog._id
-# ,
-#   blog: 'blogId'
-# 
-# # Scen C - Inverse ref
-# Blog.source mongo,
-#   _id: ObjectId
-#   authorId: schema('User')._id # (*)
-# 
-# User.source mongo,
-#   _id: ObjectId
-# ,
-#   blog: Blog.authorId
+mongo = null
+Schema = require 'Schema'
+Blog = null
+User = null
+Group = null
 
 module.exports =
+  setup: (done) ->
+    Blog = Schema.extend 'Blog', 'blogs',
+      _id: String
+      name: String
+    Blog._sources = []
+
+    User = Schema.extend 'User', 'users',
+      _id: String
+      name: String
+      age: Number
+      tags: [String]
+      keywords: [String]
+      luckyNumbers: [Number]
+      blog: Blog
+    #  friends: [schema('User')]
+      # BRIAN: A Schema should be a special Type?
+      # But Types only make sense in the context of being used
+      # in a Schema definition. So perhaps, it is more accurate
+      # to say that Schema can have a Type interface
+    #  group: schema('Group')
+    User._sources = []
+
+    mongo = new Mongo
+    mongo.connect 'mongodb://localhost/racer_test'
+    {ObjectId} = require 'Schema/Mongo/types'
+    # mongo.connect 'mongodb://localhost/racer_test'
+    #User.source mongo, 'los_users',
+    User.source mongo, 'users',
+      _id: ObjectId
+      name: String
+    #  age: Number
+    #  tags: [String]
+    #  keywords: [String]
+    #  friendIds: [User._id]
+    #  groupId: schema(Group)._id
+    #,
+    #  friends: User.friendIds
+
+    # # Alt A
+    # friends: User.where('_id').findOne (user) ->
+    #   User.where('_id', user.friendIds).find()
+    # # Alt B
+    # friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
+
+    Group = Schema.extend 'Group', 'groups',
+      _id: String
+      name: String
+    #  users: [User]
+
+    Group._sources = []
+
+    Group.source mongo,
+      _id: ObjectId
+      name: String
+    #,
+    #  users: [User.groupId]
+
+
+    #   users: [User.groupId.pointingTo.me]
+    #   users: User.find().where('groupId') # Curries fn User.where('groupId', thisGroupId)
+    #   users: curry User.find().where, 'groupId'
+
+    #   # Using join table
+    #   friends: [schema('FriendsJoin').friendA]
+    # 
+    # # (*)
+    # # users                             users
+    # # me <---[friendAId, friendBId]---> me.friends 
+    # Mongo.schema.join 'FriendsJoin', 'friends_join',
+    #   friendXId: User._id
+    #   friendYId: User._id
+    # ,
+    #   friendA: friendYId
+    #   friendB: friendXId
+    # 
+    # User.source mongo, 'los_users',
+    #   _id: Mongo.pkey
+    #   # ...
+    #   friendIds: [User._id]
+    #   blogId: Blog._id
+    # ,
+    #   friends: friendIds
+    # 
+    # # Scen A - array of refs
+    # Blog.source mongo,
+    #   _id: ObjectId
+    #   authorIds: [User._id]
+    # ,
+    #   authors: 'authorIds'
+    # 
+    # User.source mongo,
+    #   _id: ObjectId
+    # ,
+    #   blog: pointedToBy(Blog.authors)
+    # 
+    # # Scen B - ref
+    # Blog.source mongo,
+    #   _id: ObjectId
+    # User.source mongo,
+    #   _id: ObjectId
+    #   blogId: Blog._id
+    # ,
+    #   blog: 'blogId'
+    # 
+    # # Scen C - Inverse ref
+    # Blog.source mongo,
+    #   _id: ObjectId
+    #   authorId: schema('User')._id # (*)
+    # 
+    # User.source mongo,
+    #   _id: ObjectId
+    # ,
+    #   blog: Blog.authorId
+    mongo.flush done
+
+  teardown: (done) ->
+    mongo.flush ->
+      mongo.disconnect()
+      done()
+
+  'primary key _id should be created on saving a new doc @single': (done) ->
+    u = new User name: 'Brian'
+    u.save (err, u) ->
+      should.equal null, err
+      _id = u.get '_id'
+      _idType = typeof _id
+      _idType.should.equal 'string'
+      _id.length.should.equal 24
+      done()
+
+  'should be able to retrieve a document after creating it @single': (done) ->
+    User.create name: 'Brian', (err, createdUser) ->
+      should.equal null, err
+      User.findOne
+        _id: createdUser.get '_id'
+      , (err, foundUser) ->
+        should.equal null, err
+        for path in ['_id', 'name']
+          foundUser.get(path).should.equal createdUser.get(path)
+        foundUser.get('name').should.equal 'Brian'
+        done()
 
   # Query building
   'should create a new update $set query for a single set': (done) ->

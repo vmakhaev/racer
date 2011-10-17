@@ -1,10 +1,7 @@
 url = require 'url'
 mongo = require 'mongodb'
+NativeObjectId = mongo.BSONPure.ObjectID
 {EventEmitter} = require 'events'
-
-ObjectId = mongo.BSONPure.ObjectID
-ObjectId.toString = (oid) -> oid.toHexString()
-ObjectId.fromString = (str) -> @createFromHexString str
 
 DISCONNECTED  = 1
 CONNECTING    = 2
@@ -18,20 +15,16 @@ DISCONNECTING = 4
 #   port: 27017
 #   database: 'example'
 MongoAdapter = module.exports = (conf) ->
-  EventEmitter.call this
-  @_ver = 0
-
+  EventEmitter.call @
   @_loadConf conf if conf
-
   @_state = DISCONNECTED
-
   @_collections = {}
-
   @_pending = []
-
   return
 
 MongoAdapter:: =
+  __proto__: EventEmitter::
+
   _loadConf: (conf) ->
     if typeof conf == 'string'
       uri = url.parse conf
@@ -85,71 +78,26 @@ MongoAdapter:: =
       throw err if err
       callback()
 
-  # TODO create (new docs with auto-id's)
-  #      Perhaps use "namespace.?.path.val"
+  # Mutator methods called via CustomDataSource::applyOps
+  update: (collection, conds, op, opts, callback) ->
+    @_collection(collection).update conds, op, opts, callback
 
-  update: (conds, op, opts, callback) ->
-    @_collection(collecton).update conds, op, opts, callback
-
-  set: (path, val, ver, callback) ->
-    return @_pending.push ['set', arguments] if @_state != CONNECTED
-    [collection, id, path...] = path.split '.'
-    if path.length
-      path = path.join '.'
-      delta = {ver: ver}
-      delta[path] = val
-      return @_collection(collection).update {_id: id}, { $set: delta}, { upsert: true, safe: true }, callback
-    delta = @_flatten path.join('.'), val
-    delta.ver = ver
-    @_collection(collection).update {_id: id}, { $set: delta }, { upsert: true, safe: true }, callback
-
-  del: (path, ver, callback) ->
-    return @_pending.push ['del', arguments] if @_state != CONNECTED
-    [collection, id, path...] = path.split '.'
-    if path.length
-      path = path.join '.'
-      unset = {}
-      unset[path] = 1
-      return @_collection(collection).update {_id: id}, { $unset: unset }, { safe: true}, callback
-    @_collection(collection).remove {_id: id}, callback
-
-  get: (path,callback) ->
-    return @_pending.push ['get', arguments] if @_state != CONNECTED
-    [collection, id, path...] = path.split '.'
-    if path.length
-      path = path.join '.'
-      fields = { _id: 0, ver: 1 }
-      fields[path] = 1
-      return @_collection(collection).findOne {_id: id}, { fields: fields }, (err, doc) ->
-        return callback err if err
-        # TODO Fix doc[path] with a lookup
-        callback null, doc && doc[path], doc && doc.ver
-    @_collection(collection).findOne {_id: id}, (err, doc) ->
+  insert: (collection, json, opts, callback) ->
+    # TODO Leverage pkey flag; it may not be _id
+    json._id = new NativeObjectId
+    @_collection(collection).insert json, opts, (err) ->
       return callback err if err
-      ver = doc && doc.ver
-      delete doc.ver if doc
-      callback null, doc, ver
+      callback null, {_id: json._id}
 
+  # Callback here receives raw json data back from Mongo
+  findOne: (collection, conds, opts, callback) ->
+    @_collection(collection).findOne conds, opts, callback
+
+  # Finds or creates the Mongo collection
   _collection: (name) ->
     @_collections[name] ||= new Collection name, @_db
 
-  _genObjectId: ->
-    ObjectId.toString(new ObjectId)
 
-  _flatten: (path, obj, delta = {}) ->
-    if obj.constructor != Object
-      delta[path] = obj
-      return delta
-
-    for k, v of obj
-      nextPath = if path then "#{path}.#{k}" else k
-      @_flatten nextPath, v, delta
-    return delta
-    
-
-MongoAdapter.prototype.__proto__ = EventEmitter.prototype
-
-# MongoCollection = require ('../../node_modules/mongodb/lib/mongodb').Collection
 MongoCollection = mongo.Collection
 
 Collection = (name, db) ->
