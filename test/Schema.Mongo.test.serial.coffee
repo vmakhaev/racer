@@ -6,6 +6,7 @@ Blog = null
 Dog = null
 User = null
 Group = null
+ObjectId = null
 
 module.exports =
   setup: (done) ->
@@ -241,7 +242,7 @@ module.exports =
     done()
 
   '''setting to a Schema instance, a field that maps to a Schema should assign
-  that Schema instance directly @single''': (done) ->
+  that Schema instance directly''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', new Dog name: 'Banana'
     u.get('pet').should.be.an.instanceof Dog
@@ -249,7 +250,7 @@ module.exports =
     done()
 
   '''setting to a non-matching Schema instance, a field that maps to another
-  Schema should raise an error @single''': (done) ->
+  Schema should raise an error''': (done) ->
     u = new User name: 'Brian'
     didErr = false
     try
@@ -261,21 +262,35 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal''': (done) ->
+  and set as an object literal @single''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pet', name: 'Banana'
+    u.save (err, createdUser) ->
+      should.equal null, err
+      _id = ObjectId.fromString createdUser.get '_id'
+      # dogId = createdUser.get('pet').get('_id')
+      mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: _id
+          name: 'Brian'
+          pet:
+            # _id: dogId
+            name: 'Banana'
+        done()
+
+  '''should be able to properly retrieve an embedded document
+  as the configured logical schema relation @single''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
       should.equal null, err
       _id = createdUser.get '_id'
-      dogId = createdUser.get('pet').get('_id')
-      mongo.adapter.findOne 'users', {_id}, { safe: true }, (err, json) ->
+      User.findOne {_id}, (err, foundUser) ->
         should.equal null, err
-        json.should.eql
-          _id: _id
-          name: 'Brian'
-          dog:
-            _id: dogId
-            name: 'Banana'
+        dog = foundUser.get 'pet'
+        dog.should.be.an.instanceof Dog
+        foundUser.get('pet').get('name').should.equal 'Banana'
         done()
 
   # Query building

@@ -127,8 +127,6 @@
 #
 # # Creates txn/op - [ver, txnId, 'push', 'groups.stanford.todoList', {id: id, completed: false, text: text}]
 # # This op gets sent to the server Store
-# # 
-# 
 
 # TODO Re-name @_doc and @_fields for less confusion
 
