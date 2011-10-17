@@ -54,9 +54,9 @@ LogicalQuery:: =
       promise.bothback callback
       source[queryMethod] ns, @_conditions, (err, castedJson) ->
         if Array.isArray castedJson
-          result = (new Skema castedMem for castedMem in castedJson)
+          result = (new Skema castedMem, false for castedMem in castedJson)
         else
-          result = new Skema castedJson
+          result = new Skema castedJson, false
         return promise.resolve null, result
       return promise
 

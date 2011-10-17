@@ -137,7 +137,7 @@ module.exports =
       _id.length.should.equal 24
       done()
 
-  'should be able to retrieve a document after creating it @single': (done) ->
+  'should be able to retrieve a document after creating it': (done) ->
     User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.findOne
@@ -160,6 +160,29 @@ module.exports =
           found.length.should.equal 2
           found[0].get('_id').should.equal userOne.get('_id')
           found[1].get('_id').should.equal userTwo.get('_id')
+          done()
+
+  'a found document should not initially have an oplog @single': (done) ->
+    User.create name: 'Brian', age: 26, (err, createdUser) ->
+      should.equal null, err
+      User.findOne
+        _id: createdUser.get '_id'
+      , (err, foundUser) ->
+        should.equal null, err
+        foundUser.oplog.should.be.empty
+        done()
+
+  'array of found documents should not initially have an oplog @single': (done) ->
+    User.create name: 'Brian', age: 26, (err, createdUser) ->
+      should.equal null, err
+      User.create name: 'Brian', age: 26, (err, createdUser) ->
+        should.equal null, err
+        User.find
+          name: 'Brian'
+        , (err, found) ->
+          should.equal null, err
+          for foundUser in found
+            foundUser.oplog.should.be.empty
           done()
 
   'should persist a single push onto a document array field': (done) ->
