@@ -295,7 +295,7 @@ module.exports =
         should.equal null, err
         dog = foundUser.get 'pet'
         dog.should.be.an.instanceof Dog
-        foundUser.get('pet').get('name').should.equal 'Banana'
+        dog.get('name').should.equal 'Banana'
         done()
 
   # Embedded Array documents
@@ -386,7 +386,7 @@ module.exports =
     done()
 
   '''should persist a relation specified as an embedded array of
-  documents as an embedded array of object literals on Mongo @single''': (done) ->
+  documents as an embedded array of object literals on Mongo''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
     u.save (err, createdUser) ->
@@ -401,6 +401,22 @@ module.exports =
             { name: 'Banana' }
             { name: 'Squeak' }
           ]
+        done()
+
+  '''should be able to properly retrieve an embedded array of documents
+  as the configured local schema relation [Schema]''': (done) ->
+    u = new User name: 'Brian'
+    u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
+    u.save (err, createdUser) ->
+      should.equal null, err
+      _id = createdUser.get '_id'
+      User.findOne {_id}, (err, foundUser) ->
+        should.equal null, err
+        pets = foundUser.get 'pets'
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[1].get('name').should.equal 'Squeak'
         done()
 
   # Query building
