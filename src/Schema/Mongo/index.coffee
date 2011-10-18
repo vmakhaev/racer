@@ -19,6 +19,7 @@ MongoSource = module.exports = DataSource.extend
       memberType = descriptor[0]
       concreteArrayType = Object.create arrayType
       concreteArrayType.memberType = @inferType memberType
+      return concreteArrayType
     if type = types[descriptor.name || descriptor._name]
       return type
 
@@ -126,6 +127,7 @@ MongoSource = module.exports = DataSource.extend
     return [query, nextQuery]
 
   push: (ns, field, query, conds, path, values...) ->
+    values = field.cast values if field.cast
     # Assign or augment query.(method|conds|val)
     {ns: qns, method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
