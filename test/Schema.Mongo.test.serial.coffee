@@ -385,6 +385,24 @@ module.exports =
     errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
+  '''should persist a relation specified as an embedded array of
+  documents as an embedded array of object literals on Mongo @single''': (done) ->
+    u = new User name: 'Brian'
+    u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
+    u.save (err, createdUser) ->
+      should.equal null, err
+      _id = ObjectId.fromString createdUser.get '_id'
+      mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: _id
+          name: 'Brian'
+          pets: [
+            { name: 'Banana' }
+            { name: 'Squeak' }
+          ]
+        done()
+
   # Query building
   'should create a new update $set query for a single set': (done) ->
     addOp = false
