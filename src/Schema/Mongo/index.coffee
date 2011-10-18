@@ -105,6 +105,7 @@ MongoSource = module.exports = DataSource.extend
     # Assign or augment query.(method|conds|val)
     {method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
+      query.ns = ns
       query.method = 'update'
       query.conds = conds
       (unset = {})[path] = 1
@@ -128,6 +129,7 @@ MongoSource = module.exports = DataSource.extend
     # Assign or augment query.(method|conds|val)
     {ns: qns, method: qmethod, conds: qconds} = query
     if qmethod is undefined && qconds is undefined
+      query.ns = ns
       query.method = 'update'
       query.conds = conds
       if values.length == 1

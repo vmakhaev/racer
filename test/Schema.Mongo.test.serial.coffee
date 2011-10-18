@@ -52,9 +52,9 @@ module.exports =
       name: String
       age: Number
       tags: [String]
+      keywords: [String]
       pet: Object
       pets: [Object]
-    #  keywords: [String]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
     #,
@@ -297,7 +297,7 @@ module.exports =
 
   # Embedded Array documents
   '''setting to an array of object literals, a field that maps to [Schema] should assign
-  an array of Schema instances to the document attribute of the same name @single''': (done) ->
+  an array of Schema instances to the document attribute of the same name''': (done) ->
     u = new User name: 'Brian'
     u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
     pets = u.get('pets')
@@ -309,7 +309,7 @@ module.exports =
     done()
 
   '''pushing an object literal onto a field that maps to [Schema] should convert
-  the object literal into a Schema document and append it to the attribute @single''': (done) ->
+  the object literal into a Schema document and append it to the attribute''': (done) ->
     u = new User name: 'Brian'
     u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
     u.push 'pets', {name: 'Pogo'}
@@ -328,12 +328,12 @@ module.exports =
     addOp = false
     s = new User _id: 1, addOp
     s.set 'name', 'Brian'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $set: { name: 'Brian' } }
       { upsert: true, safe: true }
@@ -346,12 +346,12 @@ module.exports =
     s = new User _id: 1, addOp
     s.set 'name', 'Brian'
     s.set 'age', 26
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $set: { name: 'Brian', age: 26 } }
       { upsert: true, safe: true }
@@ -362,12 +362,12 @@ module.exports =
     addOp = false
     s = new User _id: 1, addOp
     s.del 'name'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $unset: { name: 1 } }
       { upsert: true, safe: true }
@@ -381,12 +381,12 @@ module.exports =
     s = new User _id: 1, addOp
     s.del 'name'
     s.del 'age'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $unset: { name: 1, age: 1 } }
       { upsert: true, safe: true }
@@ -397,12 +397,12 @@ module.exports =
     addOp = false
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { tags: 'nodejs'} }
       { upsert: true, safe: true }
@@ -414,12 +414,12 @@ module.exports =
     addOp = false
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs', 'sf'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $pushAll: { tags: ['nodejs', 'sf']} }
       { upsert: true, safe: true }
@@ -431,12 +431,12 @@ module.exports =
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs'
     s.push 'tags', 'sf'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $pushAll: { tags: ['nodejs', 'sf']} }
       { upsert: true, safe: true }
@@ -449,13 +449,13 @@ module.exports =
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs'
     s.push 'keywords', 'sf'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { tags: 'nodejs'} }
       { upsert: true, safe: true }
@@ -464,6 +464,7 @@ module.exports =
     {method, args} = queries[1]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { keywords: 'sf'} }
       { upsert: true, safe: true }
@@ -478,13 +479,13 @@ module.exports =
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs'
     s.push 'keywords', 'sf', 'socal'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { tags: 'nodejs'} }
       { upsert: true, safe: true }
@@ -493,6 +494,7 @@ module.exports =
     {method, args} = queries[1]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $pushAll: { keywords: ['sf', 'socal']} }
       { upsert: true, safe: true }
@@ -507,13 +509,13 @@ module.exports =
     s = new User _id: 1, addOp
     s.push 'tags', 'nodejs', 'sf'
     s.push 'keywords', 'socal'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $pushAll: { tags: ['nodejs', 'sf']} }
       { upsert: true, safe: true }
@@ -522,6 +524,7 @@ module.exports =
     {method, args} = queries[1]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { keywords: 'socal'} }
       { upsert: true, safe: true }
@@ -535,13 +538,13 @@ module.exports =
     s = new User _id: 1, addOp
     s.set 'name', 'Brian'
     s.push 'keywords', 'socal'
-    m = new Mongo
-    queries = m._queriesForOps s.oplog
+    queries = mongo._queriesForOps s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $set: { name: 'Brian' } }
       { upsert: true, safe: true }
@@ -550,6 +553,7 @@ module.exports =
     {method, args} = queries[1]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { keywords: 'socal'} }
       { upsert: true, safe: true }
@@ -567,13 +571,13 @@ module.exports =
     s2.push 'tags', 'sf'
     oplog = s1.oplog.concat s2.oplog
 
-    m = new Mongo
-    queries = m._queriesForOps oplog
+    queries = mongo._queriesForOps oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 1}
       { $push: { tags: 'nodejs' } }
       { upsert: true, safe: true }
@@ -582,6 +586,7 @@ module.exports =
     {method, args} = queries[1]
     method.should.equal 'update'
     args.should.eql [
+      'users'
       {_id: 2}
       { $push: { tags: 'sf'} }
       { upsert: true, safe: true }
