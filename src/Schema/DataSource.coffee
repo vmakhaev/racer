@@ -51,8 +51,10 @@ DataSource::=
             for attrName, attrVal of extraAttrs
               dataField = nsFields[attrName]
               logicalField = LogicalSkema._fields[attrName]
-              if dataField.name != logicalField.type.name
-                extraAttrs[attrName] = dataField['to' + logicalField.type.name](attrVal)
+              logicalType = logicalField.type
+              logicalTypeName = logicalType.name || logicalType._name
+              if dataField._name != logicalTypeName
+                extraAttrs[attrName] = dataField['to' + logicalTypeName](attrVal)
         unless remainingQueries
           callback null, extraAttrs
     return

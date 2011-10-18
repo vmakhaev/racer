@@ -1,6 +1,6 @@
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId =
-  name: 'ObjectId'
+  _name: 'ObjectId'
   NativeObjectId: NativeObjectId
 
   cast: (val) ->
@@ -19,7 +19,7 @@ exports.ObjectId =
     return oid.toHexString()
 
 exports.Array =
-  name: 'Array'
+  _name: 'Array'
   
   cast: (list) ->
     return (@memberType.cast member for member in list)
@@ -28,4 +28,4 @@ exports.Array =
 # array if this is a recursive inferType call
 # TODO Can we remove this?
 exports.Object =
-  name: 'Object'
+  _name: 'Object'

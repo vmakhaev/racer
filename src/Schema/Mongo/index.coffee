@@ -19,7 +19,7 @@ MongoSource = module.exports = DataSource.extend
       memberType = descriptor[0]
       concreteArrayType = Object.create arrayType
       concreteArrayType.memberType = @inferType memberType
-    if type = types[descriptor.name]
+    if type = types[descriptor.name || descriptor._name]
       return type
 
     # else String, Number, Object => Take things as they are
