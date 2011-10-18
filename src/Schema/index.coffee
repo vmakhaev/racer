@@ -213,7 +213,7 @@ Schema.extend = (name, namespace, config) ->
       return new @ val
     if val instanceof @
       return val
-    throw new Error 'val is neither an Object nor a ' + @::name
+    throw new Error val + ' is neither an Object nor a ' + @::name
 
   return Schema._schemas[namespace] = SubClass
 
@@ -307,28 +307,16 @@ Schema::constructor = Schema
 merge Schema::,
   _assignAttrs: (name, val, obj = @_doc) ->
     Skema = @constructor
+    if field = Skema._fields[name]
+      return obj[name] = field.cast val
+    
     if val.constructor == Object
-      field = Skema._fields[name]
-      type = field.type
-      if 'function' == typeof type
-        # If we have a constructor, most likely Schema
-        obj[name] = new type val
-        return
       for k, v of val
         nextObj = obj[name] ||= {}
         @_assignAttrs k, v, nextObj
-    else if val instanceof Schema
-      field = Skema._fields[name]
-      type = field.type
-      unless val instanceof type
-        throw new Error "Trying to assign #{val} to a #{type.name} attribute"
-      obj[name] = val
-    else if Array.isArray val
-      field = Skema._fields[name]
-      obj[name] = field.cast val
-    else
-      obj[name] = val
-    return
+      return
+
+    throw new Error "Either #{name} isn't a field of #{Skema.name}, or #{val} is not an Object"
 
   atomic: ->
     obj = Object.create @
