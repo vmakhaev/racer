@@ -255,11 +255,14 @@ module.exports =
   Schema should raise an error''': (done) ->
     u = new User name: 'Brian'
     didErr = false
+    errMsg = null
     try
       u.set 'pet', new User name: 'Brian'
     catch e
       didErr = true
+      errMsg = e.message
     didErr.should.be.true
+    errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
 
@@ -306,6 +309,38 @@ module.exports =
       pet.should.be.an.instanceof Dog
     pets[0].get('name').should.equal 'Banana'
     pets[1].get('name').should.equal 'Squeak'
+    done()
+
+  '''setting to an array of CustomSchema instances, a field that maps to
+  [Schema] should assign the array of Schema instances directly''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pets', [
+      new Dog name: 'Banana'
+      new Dog name: 'Squeak'
+    ]
+    pets = u.get('pets')
+    pets.should.have.length 2
+    for pet in pets
+      pet.should.be.an.instanceof Dog
+    pets[0].get('name').should.equal 'Banana'
+    pets[1].get('name').should.equal 'Squeak'
+    done()
+
+  '''setting to an array of SomeSchema instances that contains a non-matching
+  SchemaB, a field that maps to [SchemaA] should raise an error''': (done) ->
+    u = new User name: 'Brian'
+    didErr = false
+    errMsg = null
+    try
+      u.set 'pets', [
+        new User name: 'Banana'
+        new Dog name: 'Squeak'
+      ]
+    catch e
+      didErr = true
+      errMsg = e.message
+    didErr.should.be.true
+    errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
   '''pushing an object literal onto a field that maps to [Schema] should convert

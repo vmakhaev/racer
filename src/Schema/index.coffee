@@ -182,7 +182,8 @@ Schema.extend = (name, namespace, config) ->
   SubClass:: = prototype = new @()
   prototype.constructor = SubClass
 
-  SubClass.name = name
+  # SubClass.name is frozen to ""
+  SubClass._name = name
   SubClass.namespace = namespace
 
   SubClass._subclasses = []
@@ -195,8 +196,8 @@ Schema.extend = (name, namespace, config) ->
 
   # Copy over all dynamically generated static methods
   SubClass._statics = {}
-  for name, fn of @_statics
-    SubClass.static name, fn
+  for staticName, fn of @_statics
+    SubClass.static staticName, fn
 
   SubClass._fields = {}
   SubClass.field = (fieldName, setToField) ->
@@ -213,7 +214,7 @@ Schema.extend = (name, namespace, config) ->
       return new @ val
     if val instanceof @
       return val
-    throw new Error val + ' is neither an Object nor a ' + @::name
+    throw new Error val + ' is neither an Object nor a ' + @_name
 
   return Schema._schemas[namespace] = SubClass
 
@@ -316,7 +317,7 @@ merge Schema::,
         @_assignAttrs k, v, nextObj
       return
 
-    throw new Error "Either #{name} isn't a field of #{Skema.name}, or #{val} is not an Object"
+    throw new Error "Either #{name} isn't a field of #{Skema._name}, or #{val} is not an Object"
 
   atomic: ->
     obj = Object.create @
@@ -393,7 +394,7 @@ merge Schema::,
       SubSubSchema:: = new SubSchema
       SubSubSchema.assignAsTypeToSchemaField schema, fieldName
     Schema.on 'define', (schema) ->
-      if schema.name == schemaAsString
+      if schema._name == schemaAsString
         promise.fulfill schema, promise.fieldName
     return promise
 
