@@ -343,7 +343,7 @@ module.exports =
     errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
-  '''pushing an object literal onto a field that maps to [Schema] should convert
+  '''pushing an object literal onto a [Schema] field should convert
   the object literal into a Schema document and append it to the attribute''': (done) ->
     u = new User name: 'Brian'
     u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
@@ -357,6 +357,33 @@ module.exports =
     pets[2].get('name').should.equal 'Pogo'
     done()
 
+  '''pushing a Schema instance onto a [Schema] field should push the
+  Schema instance directly onto the existing array of instances''': (done) ->
+    u = new User name: 'Brian'
+    u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+    u.push 'pets', new Dog name: 'Pogo'
+    pets = u.get('pets')
+    pets.should.have.length 3
+    for pet in pets
+      pet.should.be.an.instanceof Dog
+    pets[0].get('name').should.equal 'Banana'
+    pets[1].get('name').should.equal 'Squeak'
+    pets[2].get('name').should.equal 'Pogo'
+    done()
+
+  '''pushing a SchemaB instance onto a [SchemaA] field should raise
+  an error''': (done) ->
+    u = new User name: 'Brian'
+    didErr = false
+    errMsg = null
+    try
+      u.push 'pets', new User name: 'Banana'
+    catch e
+      didErr = true
+      errMsg = e.message
+    didErr.should.be.true
+    errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
+    done()
 
   # Query building
   'should create a new update $set query for a single set': (done) ->
