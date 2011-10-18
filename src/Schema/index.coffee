@@ -306,6 +306,8 @@ for queryMethodName, queryFn of LogicalQuery::
 Schema:: = EventEmitter::
 Schema::constructor = Schema
 merge Schema::,
+  toJSON: -> @_doc
+
   _assignAttrs: (name, val, obj = @_doc) ->
     Skema = @constructor
     if field = Skema._fields[name]

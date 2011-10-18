@@ -1,3 +1,5 @@
+Schema = require '../index'
+
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId =
   _name: 'ObjectId'
@@ -29,3 +31,6 @@ exports.Array =
 # TODO Can we remove this?
 exports.Object =
   _name: 'Object'
+  cast: (val) ->
+    return val.toJSON() if val instanceof Schema
+    return val
