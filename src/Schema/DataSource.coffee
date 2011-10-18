@@ -11,6 +11,13 @@ DataSource::=
   disconnect: (callback) -> @adapter.disconnect callback
   flush: (callback) -> @adapter.flush callback
 
+  pkey: (fieldNameOrType) ->
+    if 'string' == typeof fieldNameOrType
+      return @_pkeyField = fieldNameOrType
+    return {
+      $type: fieldNameOrType
+      $pkey: true
+    }
   addField: (Skema, fieldName, descriptor) ->
     namespace = Skema.namespace
     nsFields = @fields[namespace] ||= {}
