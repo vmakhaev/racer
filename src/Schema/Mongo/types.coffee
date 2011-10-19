@@ -1,5 +1,7 @@
 Schema = require '../index'
 
+# TODO Add createField(opts) ?
+
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId =
   _name: 'ObjectId'
@@ -28,9 +30,20 @@ exports.Array =
 
 # Object means an embedded document or the member of an embedded 
 # array if this is a recursive inferType call
-# TODO Can we remove this?
+# TODO Can we remove exports.Object type?
 exports.Object =
   _name: 'Object'
   cast: (val) ->
     return val.toJSON() if val instanceof Schema
     return val
+
+exports.Ref =
+  _name: 'Ref'
+
+  cast: (val) ->
+    return @pkeyType.cast val
+
+  createField: ({pkeyType}) ->
+    field = Object.create @
+    field.pkeyType = pkeyType
+    return field
