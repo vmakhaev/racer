@@ -237,6 +237,7 @@ Schema.static = (name, fn) ->
 
 # TODO Setup method and data structure that is used to
 # define async flow control for reads/writes
+
 Schema.static
   _sources: []
   source: (source, ns, fieldsConfig) ->
@@ -251,16 +252,29 @@ Schema.static
     path = path.substring pivot+1
     return { path, schema: @_schemas[namespace] }
 
-  # Send the oplog to the data sources
+  # Send the oplog to the data sources, where they
+  # convert the ops into db commands and exec them
+  #
+  # @param {Array} oplog
+  # @param {Function} callback(err, doc)
+  # @param {Schema} doc
   applyOps: (oplog, callback, doc) ->
     sources = @_sources
     remainingSources = sources.length
     for source in sources
+      # TODO Perhaps each source adds to a QuerySet that then gets run
+      #      after all sources have acked the oplog. Perhaps we call
+      #      the thing that manages this the QueryManager or SourceManager?
+
       # Send oplog to all data sources. Data sources can choose to ignore 
-      # the query if it's not relevant to it, or it can choose to 
-      # execute the oplog selectively. How does this fit in with STM?
+      # the query if it's not relevant to it, or it can choose to exec 
+      # the oplog selectively. How does this fit in with STM?
       # We need to have a rollback mechanism
       source.applyOps oplog, (err, extraAttrs) =>
+        # `extraAttrs` are attributes that were not present in the oplog
+        # when sent to the source, but that were then created by the source.
+        # These new extraAttr need to be written back to the Schema document
+        # -- e.g., auto-incrementing primary key in MySQL
         --remainingSources
         return callback err if err
         if extraAttrs
