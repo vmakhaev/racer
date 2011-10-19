@@ -1,7 +1,11 @@
 {merge} = require '../util'
 
 DataSource = module.exports = ->
-  @fields = {} # Maps namespace -> fieldName -> field
+  # Encapsulates the Data Source schemas for each logical Schema that
+  # declared this Data Source as one of its sources.
+  # Maps namespace -> fieldName -> field
+  @fields = {}
+
   @schemas = {} # Maps namespace -> CustomSchema
   @adapter = new @AdapterClass() if @AdapterClass
   return
@@ -19,9 +23,22 @@ DataSource::=
       $pkey: true
     }
   addField: (Skema, fieldName, descriptor) ->
+        
     namespace = Skema.namespace
     nsFields = @fields[namespace] ||= {}
-    nsFields[fieldName] = @inferType descriptor
+    type = nsFields[fieldName] = @inferType descriptor
+
+    # The following is for use in rvalues of other data source schemas
+    # e.g.,
+    #     CustomSchema.source(mongo, 'namespace', {
+    #       _id: ObjectId
+    #       someAttr: thisSrc.Skema._id
+    #     });
+    @[Skema._name] ||= {}
+    @[Skema._name][fieldName] =
+      $dataField: # TODO Rename to $foreignField ?
+        fieldName: fieldName
+        type: type
 
   # Adds defaults specified in the data source schema
   # to the Logical Source schema document.
@@ -38,30 +55,35 @@ DataSource::=
         # TODO Ensure fieldName is part of logical schema AND data source schema; not part of data source schema but not logical schema
         document.set fieldName, defaultTo
 
+  # @param {Array} oplog
+  # @param {Function} callback(err, extraAttrs)
   applyOps: (oplog, callback) ->
-    adapter = @adapter
     oplog = @_minifyOps oplog if @_minifyOps
-    queries = @_queriesForOps oplog
+
+    querySet = @_oplogToQuerySet oplog
+    return querySet.fire @, callback
+
+    # TODO Deprecate the rest of this method
+    queries = @_queriesForOps oplog, callback
     remainingQueries = queries.length
     for {method, args} in queries
       # e.g., adapter.update 'users', {_id: id}, {$set: {name: 'Brian', age: '26'}}, {upsert: true, safe: true}, callback
       adapter[method] args..., (err, extraAttrs) =>
         --remainingQueries
         return callback err if err
+        return unless extraAttrs
         ns = args[0]
         # Transform data schema attributes from db result 
         # into logical schema attributes
-        if extraAttrs
-          LogicalSkema = @schemas[ns]
-          nsFields = @fields[ns]
-          if extraAttrs
-            for attrName, attrVal of extraAttrs
-              dataField = nsFields[attrName]
-              logicalField = LogicalSkema._fields[attrName]
-              logicalType = logicalField.type
-              logicalTypeName = logicalType.name || logicalType._name
-              if dataField._name != logicalTypeName
-                extraAttrs[attrName] = dataField['to' + logicalTypeName](attrVal)
+        LogicalSkema = @schemas[ns]
+        nsFields = @fields[ns]
+        for attrName, attrVal of extraAttrs
+          dataField = nsFields[attrName]
+          logicalField = LogicalSkema._fields[attrName]
+          logicalType = logicalField.type
+          logicalTypeName = logicalType.name || logicalType._name
+          if dataField._name != logicalTypeName
+            extraAttrs[attrName] = dataField['to' + logicalTypeName](attrVal)
         unless remainingQueries
           callback null, extraAttrs
     return

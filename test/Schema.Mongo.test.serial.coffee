@@ -6,6 +6,7 @@ Blog = null
 Dog = null
 User = null
 Group = null
+Tweet = null
 ObjectId = null
 
 module.exports =
@@ -48,7 +49,7 @@ module.exports =
     # mongo.connect 'mongodb://localhost/racer_test'
     #User.source mongo, 'los_users',
     User.source mongo, 'users',
-      _id: ObjectId
+      _id: mongo.pkey ObjectId
       name: String
       age: Number
       tags: [String]
@@ -61,10 +62,22 @@ module.exports =
     #  friends: User.friendIds
 
     # # Alt A
-    # friends: User.where('_id').findOne (user) ->
+    # friends: User.where('_id').findOne (err, user) ->
     #   User.where('_id', user.friendIds).find()
     # # Alt B
     # friends: (id) -> User.where('_id', User.where('_id', id).findOne().friendIds).find()
+
+    Tweet = Schema.extend 'Tweet', 'tweets',
+      _id: String
+      status: String
+      author: User
+    Tweet._sources = []
+
+    Tweet.source mongo, 'tweets',
+      _id: ObjectId
+      status: String
+      author: mongo.User._id
+      # author: mongo.pointsTo User, '_id'
 
     Group = Schema.extend 'Group', 'groups',
       _id: String
@@ -73,7 +86,7 @@ module.exports =
 
     Group._sources = []
 
-    Group.source mongo,
+    Group.source mongo, 'groups',
       _id: ObjectId
       name: String
     #,
@@ -235,6 +248,7 @@ module.exports =
         done()
 
   # Embedded documents
+  # TODO Move this test and other appropriate tests to Schema.test.serial.coffee
   '''setting to an object literal, a field that maps to a Schema should assign
   an instance of that Schema to the document attribute of the same name''': (done) ->
     u = new User name: 'Brian'
@@ -418,6 +432,30 @@ module.exports =
         pets[0].get('name').should.equal 'Banana'
         pets[1].get('name').should.equal 'Squeak'
         done()
+
+  # Refs
+  '''should properly persist a relation specified as a ref as (a) an
+  ObjectId and (b) the object identified by that ObjectId @single''': (done) ->
+    Tweet.create
+      status: 'why so serious?',
+      author: {name: 'the clown'}
+    , (err, tweet) ->
+      should.equal null, err
+      author = tweet.get 'author'
+      authorId = ObjectId.fromString author.get '_id'
+      tweetId = ObjectId.fromString tweet.get '_id'
+      mongo.adapter.findOne 'users', _id: authorId, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: authorId
+          name: 'the clown'
+        mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+          should.equal null, err
+          json.should.eql
+            _id: tweetId
+            status: 'why so serious?'
+            author: authorId
+          done()
 
   # Query building
   'should create a new update $set query for a single set': (done) ->
@@ -689,3 +727,5 @@ module.exports =
     ]
 
     done()
+
+  # TODO Add tests for change of isNew true -> false
