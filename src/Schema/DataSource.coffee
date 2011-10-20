@@ -1,13 +1,13 @@
 {merge} = require '../util'
 
-DataSource = module.exports = ->
+DataSource = module.exports = (@adapter) ->
   # Encapsulates the Data Source schemas for each logical Schema that
   # declared this Data Source as one of its sources.
   # Maps namespace -> fieldName -> field
   @fields = {}
 
   @schemas = {} # Maps namespace -> CustomSchema
-  @adapter = new @AdapterClass() if @AdapterClass
+  @adapter ||= new @AdapterClass() if @AdapterClass
   return
 
 DataSource::=

@@ -1,12 +1,11 @@
 Promise = require '../Promise'
-Command = require './Command'
 {deepEqual} = require '../util'
 
 # @param {Object} opToCommand maps op names -> command generator
 CommandSet = module.exports = ->
   @root = null
 
-  # maps ns -> opMethod -> Command instance
+  # maps hash -> ns -> [Command instances]
   @commands = {}
 
   # maps command id -> Command instance
@@ -46,17 +45,25 @@ CommandSet:: =
   findCommandByCid: (cid) ->
     @commandsByCid[cid]
 
-  findOrCreateCommand: (ns, conds, opMethod, doc) ->
-    commands = @commands
-    nsQueries = commands[ns] ||= {}
-    if opmQueries = nsQueries[opMethod]
-      for command in opmQueries
-        {conds: qconds} = command
-        return command if deepEqual conds, qconds
+  findCommands: (ns, conds) ->
+    cmds = @commands[ns]
+    return [] unless cmds
+    (cmd for cmd in cmds when if conds isnt undefined and cmd.conds isnt undefined then deepEqual conds, cmd.conds else conds == cmd.conds)
 
-    command = new Command ns, conds, opMethod, doc
-    @index command
+  index: (command) ->
+    {ns, conds} = command
+    if @singleCommand is undefined
+      @singleCommand = command
+    else if @singleCommand isnt false
+      @singleCommand = false
+    commands = @commands[ns] ||= []
+    index = commands.push command
+    id = command.id = command.ns + '.' + index
+    @commandsById[id] = command
+    @commandsByCid[cid] = command if cid = command.cid
+    return true
 
+  position: (command) ->
     # Position within concurrent flow control data structure
     unless @root
       command.pos = @root = { cmds: [[command, null]] }
@@ -64,25 +71,8 @@ CommandSet:: =
       @root.cmds.push [command, null]
       command.pos = @root
 
-    return command
-
-  index: (command) ->
-    {ns, opMethod} = command
-    if @singleCommand is undefined
-      @singleCommand = command
-    else if @singleCommand isnt false
-      @singleCommand = false
-    nsQueries = @commands[ns] ||= {}
-    opmQueries = nsQueries[opMethod] ||= []
-    index = opmQueries.push command
-    id = command.id = ns + opMethod + index
-    @commandsById[id] = command
-    @commandsByCid[cid] = command if cid = command.cid
-    return true
-
   _setupPromises: (source, callback, currPos = @root, currProm = new Promise) ->
     cmds = currPos.cmds
-
     if cmds.length == 1
       [cmd, cb] = cmds[0]
       if currPos.next

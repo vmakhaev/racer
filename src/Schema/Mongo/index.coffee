@@ -1,7 +1,8 @@
-{objEquiv} = require '../../util'
 DataSource = require '../DataSource'
 types = require './types'
 CommandSet = require '../CommandSet'
+Command = require '../Command'
+Schema = require '../index'
 
 # Important roles are:
 # - Convert oplog to db queries
@@ -30,6 +31,7 @@ MongoSource = module.exports = DataSource.extend
               type[flag] arg
           else if type[flag] is undefined
             type[flag] = arg
+          else if flag == '$pkey'
           else
             throw new Error "Unsupported type descriptor flag #{flag}"
         return type
@@ -82,46 +84,62 @@ MongoSource = module.exports = DataSource.extend
   # @param {Object} val is the oplog op's val
   # @param {Number} ver is the oplog op's ver
   set: (cmdSet, doc, ns, field, conds, path, val, ver) ->
-    cmd = cmdSet.findOrCreateCommand ns, conds, 'set', doc
+    cmds = cmdSet.findCommands ns, conds
 
+    for cmd in cmds
+      cmethod = cmd.method
+      if cmethod == 'insert'
+        matchingCmd = cmd
+        break
+      else if cmethod == 'update'
+        $atomics = Object.keys cmd.val
+        if $atomics.length > 1
+          throw new Error 'Should not have > 1 $atomic per command'
+        if '$set' of $atomics
+          matchingCmd = cmd
+          break
+    
     if field._name == 'Ref'
       {pkeyName} = field
       if cid = val.cid # If the doc we're linking to is new
         dependencyCmd = cmdSet.findCommandByCid cid
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
         cmdSet.pipe dependencyCmd, cmd, (extraAttrs) =>
-          if cmd.method == 'insert'
-            cmd.val[path] = extraAttrs[pkeyName]
-          else if cmd.method == 'update'
-            cmd.val.$set[path] = pkeyVal
+          if matchingCmd.method == 'insert'
+            matchingCmd.val[path] = extraAttrs[pkeyName]
+          else if matchingCmd.method == 'update'
+            matchingCmd.val.$set[path] = pkeyVal
           else
-            throw new Error "command method  #{cmd.method} is not supported in this context"
+            throw new Error "command method  #{matchingCmd.method} is not supported in this context"
         return cmdSet
       if pkeyVal = val[pkeyName]
         @set cmdSet, ns, field.type, conds, path, pkeyVal, ver
         return cmdSet
 
+    unless matchingCmd
+      matchingCmd = new Command ns, conds, doc
+      if conds.__cid__
+        matchingCmd.method = 'insert'
+        (matchingCmd.val = {})[path] = val
+      else
+        matchingCmd.method = 'update'
+        (delta = {})[path] = value
+        matchingCmd.val = { $set: delta}
+
+      cmdSet.index matchingCmd
+      cmdSet.position matchingCmd
+      return cmdSet
+
     val = field.cast val if field.cast
 
-    # Add or augment cmd with cmd.(method|conds|val)
-    {ns: cns, method: cmethod, conds: cconds} = cmd
-
-    switch cmethod
-      when undefined
-        unless cconds.__cid__
-          cmd.method = 'update'
-          (delta = {})[path] = val
-          cmd.val = { $set: delta }
-        else
-          cmd.method = 'insert'
-          cmd.val = {}
-          cmd.val[path] = val
+    switch matchingCmd.method
       when 'update'
         cmd.val.$set[path] = val
       when 'insert'
         cmd.val[path] = val
       else
-        throw new Error 'Implement for other incoming command method ' + cmethod
+        throw new Error 'Implement for other incoming method ' + matchingCmd.method
+
     return cmdSet
 
   del: (ns, field, cmd, conds, path) ->
@@ -148,58 +166,65 @@ MongoSource = module.exports = DataSource.extend
       [nextCommand] = @del ns, field, nextCommand, conds, path, val, ver
     return [cmd, nextCommand]
 
-  push: (ns, field, cmd, conds, path, values...) ->
+  push: (cmdSet, doc, ns, field, conds, path, values...) ->
     values = field.cast values if field.cast
-    # Assign or augment cmd.(method|conds|val)
-    {ns: cns, method: cmethod, conds: cconds} = cmd
-    if cmethod is undefined && cconds is undefined
-      cmd.ns = ns
-      cmd.method = 'update'
-      cmd.conds = conds
-      if values.length == 1
-        val = values[0]
-        k = '$push'
-      else if values.length > 1
-        val = values
-        k = '$pushAll'
-      else
-        throw new Error "length of 0! Uh oh!"
 
-      (args = {})[path] = val
-      (cmd.val ||= {})[k] = args
-    else if cmethod == 'update'
-      if objEquiv cconds, conds
-        if cmd.val.$push
-          if existingPush = cmd.val.$push[path]
-            cmd.val.$pushAll = {}
-            cmd.val.$pushAll[path] = [existingPush, values...]
-            delete cmd.val.$push
-          else
-            nextCommand = {}
-            [nextCommand] = @push ns, field, nextCommand, conds, path, values...
-        else if cmd.val.$pushAll
-          nextCommand = {}
-          [nextCommand] = @push ns, field, nextCommand, conds, path, values...
+    if field.memberType._name == 'Object' && values[0] instanceof Schema
+      @push cmdSet, doc, ns, field.memberType, conds, path, (val._doc for val in values)
+      return cmdSet
+
+    cmds = cmdSet.findCommands ns, conds
+
+    for cmd in cmds
+      cmethod = cmd.method
+      if cmethod == 'insert'
+        matchingCmd = cmd
+        break
+      else if cmethod == 'update'
+        $atomics = Object.keys cmd.val
+        if $atomics.length > 1
+          throw new Error 'Should not have > 1 $atomic per command'
+        if ('$push' of $atomics) || ('$pushAll' of $atomics)
+          matchingCmd = cmd
+          break
+
+    unless matchingCmd
+      matchingCmd = new Command ns, conds, doc
+      if conds.__cid__
+        matchingCmd.method = 'insert'
+        (matchingCmd.val = {})[path] = values
+      else
+        matchingCmd.method = 'update'
+        if values.length == 1
+          val = values[0]
+          k = '$push'
+        else if values.length > 1
+          val = values
+          k = '$pushAll'
         else
-          # Then the prior ops involved something like $set
-          nextCommand = {}
-          [nextCommand] = @push ns, field, nextCommand, conds, path, values...
-      else
-        # Current building cmd involves conditions not equal to
-        # current op conditions, so create a new cmd
-        nextCommand = {}
-        [nextCommand] = @push ns, field, nextCommand, conds, path, values...
-    else if cmethod == 'insert'
-      if ns != cns
-        nextCommand = {}
-        [nextCommand] = @push ns, field, nextCommand, conds, path, values...
-      else
+          throw new Error 'length of 0! Uh oh!'
+        (args = {})[path] = val
+        (matchingCmd.val ||= {})[k] = args
+      cmdSet.index matchingCmd
+      cmdSet.position matchingCmd
+      return cmdSet
+
+    switch matchingCmd.method
+      when 'update'
+        if existingPush = matchingCmd.$push[path]
+          matchingCmd.val.$pushAll = {}
+          matchingCmd.val.$pushAll[path] = [existingPush, values...]
+          delete matchingCmd.val.$push
+        else if existingPush = matchingCmd.val.$pushAll[path]
+          existingPath.push values...
+        else
+          throw new Error 'matchingCmd should house either push or pushAll'
+      when 'insert'
         arr = cmd.val[path] ||= []
         arr.push values...
-    else
-      nextCommand = {}
-      [nextCommand] = @push ns, field, nextCommand, conds, path, val, ver
-    return [cmd, nextCommand]
+      else
+        throw new Error 'Unimplemented'
+    return cmdSet
 
   pop: (ns, field, cmd, path, values..., ver) ->
     throw new Error 'Unimplemented'
