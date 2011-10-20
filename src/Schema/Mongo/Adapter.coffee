@@ -15,6 +15,7 @@ DISCONNECTING = 4
 #   port: 27017
 #   database: 'example'
 MongoAdapter = module.exports = (conf) ->
+  @nextId = nextId++
   EventEmitter.call @
   @_loadConf conf if conf
   @_state = DISCONNECTED
@@ -41,7 +42,7 @@ MongoAdapter:: =
       callback = conf
     else
       @_loadConf conf
-    @_db = new mongo.Db(
+    @_db ||= new mongo.Db(
         @_database
       , new mongo.Server @_host, @_port
     )
@@ -52,14 +53,17 @@ MongoAdapter:: =
       open = =>
         @_state = CONNECTED
         @emit 'connected'
-        for todo in @_pending
-          @[todo[0]].apply @, todo[1]
+        for [method, args] in @_pending
+          @[method].apply @, args
         @_pending = []
+
       if @_user && @_pass
         return @_db.authenticate @_user, @_pass, open
       return open()
 
   disconnect: (callback) ->
+    collection._ready = false for _, collection of @_collections
+
     switch @_state
       when DISCONNECTED then callback null
       when CONNECTING then @once 'connected', => @close callback
@@ -107,6 +111,7 @@ MongoAdapter:: =
 
 MongoCollection = mongo.Collection
 
+nextId = 1
 Collection = (name, db) ->
   self = this
   self.name = name
