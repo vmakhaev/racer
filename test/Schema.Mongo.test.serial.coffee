@@ -287,7 +287,7 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal''': (done) ->
+  and set as an object literal @single''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -406,7 +406,7 @@ module.exports =
     done()
 
   '''should persist a relation specified as an embedded array of
-  documents as an embedded array of object literals on Mongo @single''': (done) ->
+  documents as an embedded array of object literals on Mongo''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
     u.save (err) ->
@@ -424,7 +424,7 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded array of documents
-  as the configured local schema relation [Schema] @single''': (done) ->
+  as the configured local schema relation [Schema]''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
     u.save (err) ->
@@ -441,7 +441,7 @@ module.exports =
 
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
-  ObjectId and (b) the object identified by that ObjectId @single''': (done) ->
+  ObjectId and (b) the object identified by that ObjectId''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
