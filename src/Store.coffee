@@ -339,12 +339,21 @@ Store = module.exports = (options = {}) ->
   # because we can't count on the version to increase sequentially
   txnApplier = new Serializer
     withEach: (txn, ver) ->
+      path = transaction.path txn
+      {Skema, id, path} = Schema.fromPath path
+      transaction.path txn, path
+
       args = transaction.args(txn).slice 0
       method = transaction.method txn
+
       args.push ver, (err) ->
         # TODO: Better adapter error handling and potentially a second callback
         # to the caller of commit when the adapter operation completes
         throw err if err
+
+      oplog = Skema.toOplog id, method, args
+      Skema.applyOps oplog
+
       adapter[method] args...
 
   @disconnect = ->

@@ -1,7 +1,7 @@
 {objEquiv} = require '../../util'
 DataSource = require '../DataSource'
 types = require './types'
-CommandSet = require './CommandSet'
+CommandSet = require '../CommandSet'
 
 # Important roles are:
 # - Convert oplog to db queries
@@ -9,7 +9,7 @@ CommandSet = require './CommandSet'
 MongoSource = module.exports = DataSource.extend
 
   # The layer of abstraction that deals with db-specific commands
-  AdapterClass: require './adapter'
+  AdapterClass: require './Adapter'
 
   types: types
 
@@ -34,12 +34,13 @@ MongoSource = module.exports = DataSource.extend
             throw new Error "Unsupported type descriptor flag #{flag}"
         return type
       if '$dataField' of descriptor
-        {source, schema, fieldName, type: ftype} = descriptor.$ref
+        {source, fieldName, type: ftype} = descriptor.$dataField
         if ftype.$pkey # If this field is a ref
           # source.inferType 
           return source.types.Ref.createField
-            pkeyType: ftype.$type
-            pkeyName: ftype.fieldName
+            pkeyType: ftype
+            pkeyName: fieldName
+            source: source
         # if array ref
         # if inverse ref
         # if inverse array ref
@@ -59,13 +60,13 @@ MongoSource = module.exports = DataSource.extend
 
   _oplogToCommandSet: (oplog, cmdSet = new CommandSet) ->
     for op in oplog
-      {ns, conds, method, path, args} = operation.splat op
+      {doc, ns, conds, method, path, args} = operation.splat op
 
       # TODO Handle nested paths
 
       # Filter out paths that don't map to this Data Source
       continue unless field = @fields[ns][path]
-      @[method] cmdSet, ns, field, conds, args...
+      @[method] cmdSet, doc, ns, field, conds, args...
     return cmdSet
 
   # e.g., accomplish optimizations such as collapsing
@@ -80,20 +81,24 @@ MongoSource = module.exports = DataSource.extend
   # @param {String} path is the oplog op's path
   # @param {Object} val is the oplog op's val
   # @param {Number} ver is the oplog op's ver
-  set: (cmdSet, ns, field, conds, path, val, ver) ->
-    cmd = cmdSet.findOrCreateCommand ns, conds, 'set'
+  set: (cmdSet, doc, ns, field, conds, path, val, ver) ->
+    cmd = cmdSet.findOrCreateCommand ns, conds, 'set', doc
+
     if field._name == 'Ref'
-      pkeyName = field.pkeyName
-      unless val[pkeyName] # If is new
-        # val is an object literal that needs to be stored as a Mongo doc
-        # and then whose pkey needs to be assigned to the current path
-        # on the doc defined by the conds lookup in ns
-        {Skema: ForeignSkema, source} = field
-        targetDoc = new ForeignSkema val
-        targetCommandSet = source._oplogToCommandSet targetDoc.oplog
-        targetCommand = targetCommandSet.singleCommand
-        targetCommand.add targetCommand
-        cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
+      {pkeyName} = field
+      if cid = val.cid # If the doc we're linking to is new
+        dependencyCmd = cmdSet.findCommandByCid cid
+        # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
+        cmdSet.pipe dependencyCmd, cmd, (extraAttrs) =>
+          if cmd.method == 'insert'
+            cmd.val[path] = extraAttrs[pkeyName]
+          else if cmd.method == 'update'
+            cmd.val.$set[path] = pkeyVal
+          else
+            throw new Error "command method  #{cmd.method} is not supported in this context"
+        return cmdSet
+      if pkeyVal = val[pkeyName]
+        @set cmdSet, ns, field.type, conds, path, pkeyVal, ver
         return cmdSet
 
     val = field.cast val if field.cast
@@ -103,20 +108,20 @@ MongoSource = module.exports = DataSource.extend
 
     switch cmethod
       when undefined
-        if cconds
+        unless cconds.__cid__
           cmd.method = 'update'
           (delta = {})[path] = val
           cmd.val = { $set: delta }
-          return cmdSet
-        cmd.method = 'insert'
-        cmd.val = {}
-        cmd.val[path] = val
+        else
+          cmd.method = 'insert'
+          cmd.val = {}
+          cmd.val[path] = val
       when 'update'
         cmd.val.$set[path] = val
       when 'insert'
         cmd.val[path] = val
       else
-        throw new Error 'Implement for other incomnig cmethods - e.g., push, pushAll, etc'
+        throw new Error 'Implement for other incoming command method ' + cmethod
     return cmdSet
 
   del: (ns, field, cmd, conds, path) ->
@@ -200,4 +205,5 @@ MongoSource = module.exports = DataSource.extend
     throw new Error 'Unimplemented'
 
 operation =
-  splat: ([namespace, conds, method, args...]) -> {ns: namespace, conds, method, path: args[0], args}
+  splat: ([doc, namespace, conds, method, args...]) ->
+    {doc, ns: namespace, conds, method, path: args[0], args}
