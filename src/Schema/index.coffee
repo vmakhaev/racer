@@ -298,7 +298,10 @@ merge Schema::,
   save: (callback) ->
     oplog = @oplog.slice()
     @oplog.reset()
-    Schema.applyOps oplog, callback
+    self = @
+    Schema.applyOps oplog, (err) ->
+      return callback err if err
+      callback null, self
 
   validate: ->
     errors = []
