@@ -1,6 +1,4 @@
 # TODO Re-name @_doc and @fields for less confusion
-
-LogicalQuery = require './LogicalQuery'
 Type = require './Type'
 Promise = require '../Promise'
 {EventEmitter} = require 'events'
@@ -15,6 +13,7 @@ Schema = module.exports = ->
 
 Schema._schemas = {}
 Schema._subclasses = []
+Schema._sources = {}
 Schema.extend = (name, namespace, config) ->
   ParentClass = @
   # Constructor
@@ -45,8 +44,8 @@ Schema.extend = (name, namespace, config) ->
           attrVal = field.cast attrVal, if @isNew then @oplog else null
         if @isNew
           # TODO Move source defaults out of constructor?
-          sources = SubClass._sources
-          for source in sources
+          sources = Schema._sources
+          for _, source of sources
             source.addDefaults @
           @set attrName, attrVal
         else
@@ -127,9 +126,9 @@ Schema.fromPath = (path) ->
 # @param {Function} callback(err, doc)
 # @param {Schema} doc that originates the applyOps call
 Schema.applyOps = (oplog, callback) ->
-  sources = @_sources
+  sources = (source for _, source of @_sources)
   remainingSources = sources.length
-  for source in sources
+  for _source in sources
     # TODO Perhaps each source adds to a QuerySet that then gets run
     #      after all sources have acked the oplog. Perhaps we call
     #      the thing that manages this the QueryManager or SourceManager?
@@ -162,9 +161,8 @@ Schema.applyOps = (oplog, callback) ->
         callback err
 
 Schema.static
-  _sources: []
   source: (source, ns, fieldsConfig) ->
-    Schema._sources.push source
+    Schema._sources[source._name] ||= source
     source.schemas[ns] = @
     for field, descriptor of fieldsConfig
       # Setup handlers in the data source
@@ -204,6 +202,7 @@ Schema.static
 
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., Schema.find, Schema.findOne, etc
+LogicalQuery = require './LogicalQuery'
 for queryMethodName, queryFn of LogicalQuery::
   do (queryFn) ->
     Schema.static queryMethodName, ->

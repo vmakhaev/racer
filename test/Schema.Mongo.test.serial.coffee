@@ -424,12 +424,12 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded array of documents
-  as the configured local schema relation [Schema]''': (done) ->
+  as the configured local schema relation [Schema] @single''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
-    u.save (err, createdUser) ->
+    u.save (err) ->
       should.equal null, err
-      _id = createdUser.get '_id'
+      _id = u.get '_id'
       User.findOne {_id}, (err, foundUser) ->
         should.equal null, err
         pets = foundUser.get 'pets'
