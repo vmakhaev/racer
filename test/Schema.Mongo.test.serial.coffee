@@ -71,6 +71,7 @@ module.exports =
       _id: String
       status: String
       author: User
+
     Tweet._sources = []
 
     Tweet.source mongo, 'tweets',
@@ -436,6 +437,7 @@ module.exports =
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
   ObjectId and (b) the object identified by that ObjectId @single''': (done) ->
+    oplog = []
     Tweet.create
       status: 'why so serious?',
       author: {name: 'the clown'}
@@ -456,6 +458,7 @@ module.exports =
             status: 'why so serious?'
             author: authorId
           done()
+    , oplog
 
   # Query building
   'should create a new update $set query for a single set': (done) ->

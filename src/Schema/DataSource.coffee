@@ -37,6 +37,7 @@ DataSource::=
     @[Skema._name] ||= {}
     @[Skema._name][fieldName] =
       $dataField: # TODO Rename to $foreignField ?
+        source: @
         fieldName: fieldName
         type: type
 
@@ -60,8 +61,10 @@ DataSource::=
   applyOps: (oplog, callback) ->
     oplog = @_minifyOps oplog if @_minifyOps
 
-    querySet = @_oplogToQuerySet oplog
-    return querySet.fire @, callback
+    commandSet = @_oplogToCommandSet oplog
+    return commandSet.fire @, (err) ->
+      return callback err if err
+      callback null
 
     # TODO Deprecate the rest of this method
     queries = @_queriesForOps oplog, callback
@@ -79,7 +82,7 @@ DataSource::=
         nsFields = @fields[ns]
         for attrName, attrVal of extraAttrs
           dataField = nsFields[attrName]
-          logicalField = LogicalSkema._fields[attrName]
+          logicalField = LogicalSkema.fields[attrName]
           logicalType = logicalField.type
           logicalTypeName = logicalType.name || logicalType._name
           if dataField._name != logicalTypeName

@@ -2,7 +2,7 @@ Promise = module.exports = (callback) ->
   @callbacks = []
   @errbacks = []
   @clearValueCallbacks = []
-  @on callback if callback
+  @callback callback if callback
   return
 
 Promise:: =
@@ -20,7 +20,7 @@ Promise:: =
   error: (err) ->
     if @err
       throw new Error 'Promise has already erred'
-    @err = val
+    @err = err
     callback.call scope, err for [callback, scope] in @errbacks
     @errbacks = []
     @
@@ -42,7 +42,7 @@ Promise:: =
 
   bothback: (callback, scope) ->
     @errback callback, scope
-    @on (val) ->
+    @callback (val) ->
       callback.call @, null, val
     , scope
 
@@ -57,10 +57,34 @@ Promise:: =
     @clearValueCallbacks = []
     @
 
+Promise::callback = Promise::on
+
 Promise.parallel = (promises...) ->
   compositePromise = new Promise
   dependencies = promises.length
   for promise in promises
-    promise.on -> --dependencies || compositePromise.fulfill(true)
+    promise.callback -> --dependencies || compositePromise.fulfill(true)
     promise.onClearValue -> compositePromise.clearValue()
   return compositePromise
+
+Promise.transform = (transformFn) ->
+  transPromise = new Promise
+  origTransFulfill = transPromise.fulfill
+  transPromise.fulfill = (val) ->
+    origTransFulfill.call @, transformFn val
+  return transPromise
+
+Promise.pipe = (promiseA, promiseB) ->
+  pipePromise = new Promise
+  vals = []
+  origPipeFulfill = pipePromise.fulfill
+  pipePromise.fulfill = (val) ->
+    promiseA.fulfill val
+  promiseA.bothback (err, val) ->
+    vals[0] = val unless err
+    promiseB.resolve err, val
+  promiseB.bothback (err, val) ->
+    vals[1] = val unless err
+    origPipeFulfill.resolve err, vals
+
+  return pipePromise

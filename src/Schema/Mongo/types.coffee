@@ -43,7 +43,9 @@ exports.Ref =
   cast: (val) ->
     return @pkeyType.cast val
 
-  createField: ({pkeyType}) ->
+  createField: ({pkeyType, pkeyName, source}) ->
     field = Object.create @
     field.pkeyType = pkeyType
+    field.pkeyName = pkeyName
+    field.source = source
     return field
