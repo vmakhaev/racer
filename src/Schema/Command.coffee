@@ -50,25 +50,3 @@ Command:: =
           doc._doc[attrName] = attrVal
 
       callback err, extraAttrs
-
-#
-#
-#    adapter[@method] args..., (err, extraAttrs) =>
-#      return @promise.resolve err, extraAttrs
-#
-#
-#      return callback err if err
-#
-#      return unless extraAttrs
-#      # Phase 1: Cast extraAttrs from db data to logical
-#      # schema attributes using information about the fields
-#      # from the Data Source and the Schema
-#      for attrName, attrVal of extraAttrs
-#        sourceField = @sourceFields[attrName]
-#        logicalField = @logicalFields[attrName]
-#        logicalType = logicalField.logicalType
-#        logicalTypeName = logicalType.name || logicalType._name
-#        if sourceField._name != logicalTypeName
-#          extraAttrs[attrName] = sourceField['to' + logicalTypeName](attrVal)
-#
-#      callback null, extraAttrs

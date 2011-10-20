@@ -26,7 +26,12 @@ exports.Array =
   _name: 'Array'
   
   cast: (list) ->
-    return (@memberType.cast member for member in list)
+    # Returns an array comprehension
+    for member in list
+      if @memberType.cast
+        @memberType.cast member
+      else
+        member
 
 # Object means an embedded document or the member of an embedded 
 # array if this is a recursive inferType call
