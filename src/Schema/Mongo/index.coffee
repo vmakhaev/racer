@@ -9,6 +9,8 @@ Schema = require '../index'
 # - Define special types specific to the data store (e.g., ObjectId)
 MongoSource = module.exports = DataSource.extend
 
+  _name: 'Mongo'
+
   # The layer of abstraction that deals with db-specific commands
   AdapterClass: require './Adapter'
 

@@ -1,5 +1,6 @@
 {merge} = require '../util'
 Promise = require '../Promise'
+Schema = require './index'
 
 LogicalQuery = module.exports = (criteria) ->
   @_conditions = {}
@@ -47,7 +48,7 @@ LogicalQuery:: =
     queryMethod = @queryMethod
     Skema = @schema
     ns = Skema.namespace
-    sources = Skema._sources
+    sources = (source for _, source of Schema._sources)
     if sources.length == 1
       source = sources[0]
       promise = new Promise
