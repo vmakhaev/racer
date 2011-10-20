@@ -1,134 +1,4 @@
-# var User = Schema.extend('User', 'users', {
-#   name: {
-#     first: String,
-#     last: String
-#   },
-#   friends: [User],
-#   bestFriend: User,
-#   group: Group
-# }, {
-#   mode: 'stm'
-# })
-#
-# User.source Mongo,
-#   name: Mongo.default
-#
-# User.source Mongo,
-#   name: true
-#   friends: [DbRef()]
-#   bestFriend: DbRef()
-#   blogPosts: [DbRef(inverse: 'author')]
-#
-# BlogPost.source Mongo,
-#   author: DbRef()
-#   title: String
-#
-# # Example 3
-# User.source Mongo,
-#   blogPosts: [DbRef(inverse: 'authors')]
-#   blogPosts: [ObjectId]
-#   blogPosts: [inverse(BlogPost.authors)]
-#   blogPosts: [inverse(BlogPost.authors.id == this.id)]
-#
-# BlogPost.source Mongo,
-#   authors: [DbRef('blogPosts')]
-#
-# model.get 'users.1.name'
-#   # 1. First, lookup the 
-#
-# User.find(1).name
-# User.get('1.name')
-#
-#
-# Via model.subscribe
-#
-# 1. Subscribe pulls down the object graph from multiple data sources
-#    model.subscribe 'path.*', 'path.refA', 'path.refB'
-#    model.subscribe ->
-#     Room
-#       .where('name', params.room)
-#       .select([
-#         '*',
-#         'refA',
-#         'refB'
-#       ])
-#       .findOne()
-#
-# 2. Map namespace prefix to the pre-configured Schema
-# 3. Use the schema + query params to generate 1+ adapter queries
-#
-#
-# Via store.mutator or store.get
-#
-# 1. Map path -> namespace prefix + query params
-# 2. Map namespace -> schema
-# 3. f(schema, query) -> adapters + adapter query params
-# 4. User schema + query params to generate 1+ adapter queries
-# 5. Assemble the data, and pass it to the callback (or create a Promise)
-#
-# Via a series of store.mutators and store.gets via model.atomic
-#
-# 1. For each operation, ...
-#
-
-# # Supporting dynamic and schema-based approaches at the same time
-# ############################################################################
-#
-# # (1) Just dynamic api; No schemas
-# ############################################################################
-# model.set '_group.todoList', model.arrayRef '_group.todos', '_group.todoIds'
-# # is: model.set '_group.todoList', {$r: '_group.todos', $k: '_group.todoIds'}
-#
-# # (2) When we move to Memory Schemas
-# ####################################
-# Group = Schema.extend 'Group', 'groups',
-#   name: String
-#   todoList: [Todo]
-#   topTodo: Todo
-#   mySet: Set(Todo)
-#
-# Todo = Schema.extend 'Todo', 'groups.*.todos',
-#   id: Number
-#   completed: Boolean
-#   text: String
-#
-# Group.source MemoryAsync,
-#   name: String
-#   todoList: arrayRef('todos', 'todoIds')
-#   todos: Set(Todo)
-#   todoIds: [Number]
-#
-# Todo.source MemoryAsync
-#
-# # (3) When we move to MySQL
-# ###########################
-# Group.source MySql,
-#   name: pkey
-#   todoList: [inverse(Todo, 'group_name')]
-#
-# Group.source(MySql).index 'field1', 'field2'
-#
-# Todo.source MySql,
-#   id: pkey
-#   completed: Boolean
-#   text: String
-#   group_name: String # foreign key to Group I belong to
-#
-# # (A) Potential implementation solution
-# #######################################
-# model.set '_group.todoList', model.arrayRef '_group.todos', '_group.todoIds'
-# # This could define a generated, hidden source schema for Group and Todo.
-# # arrayRef implies 2 different Schemas (1 for _group.todos and 1 for _group)
-#
-# # set could behave differently when the value is arrayRef(...) or ref(...),
-# # so that we do not write refs data verbatim to a different persistence store
-#
-# model.push '_group.todoList', id: id, completed: false, text: text
-#
-# # Creates txn/op - [ver, txnId, 'push', 'groups.stanford.todoList', {id: id, completed: false, text: text}]
-# # This op gets sent to the server Store
-
-# TODO Re-name @_doc and @_fields for less confusion
+# TODO Re-name @_doc and @fields for less confusion
 
 LogicalQuery = require './LogicalQuery'
 Type = require './Type'
@@ -151,11 +21,15 @@ Schema.extend = (name, namespace, config) ->
   # @param {Object} attrs maps path names to values
   # @param {Boolean} isNew; will be false when populating this from the
   #                  results of a Query
-  SubClass = (attrs, @isNew = true) ->
-    # Instead of a dirty tracking object, we keep an oplog,
-    # which we can leverage better at the Adapter layer
-    # - e.g., collapse >1 same-path pushes into 1 push for Mongo
-    @oplog = []
+  # @param {Array} oplog, log of operations. Instead of a dirty tracking
+  #     object, we keep an oplog, which we can leverage better at the Adapter
+  #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
+  SubClass = (attrs, @isNew = true, @oplog = Schema.oplog || []) ->
+    @oplog.reset ||= -> @length = 0
+
+    @oplog.nextCid ||= 1
+    @cid = @oplog.nextCid++ if @isNew
+
     @_doc = {}
 
     # Invoke parent constructors
@@ -164,11 +38,11 @@ Schema.extend = (name, namespace, config) ->
     if attrs
       for attrName, attrVal of attrs
         # TODO Lazy casting later?
-        field = SubClass._fields[attrName]
+        field = SubClass.fields[attrName]
 
         # Cast defined fields; ad hoc fields skip this
         if field
-          attrVal = field.cast attrVal
+          attrVal = field.cast attrVal, if @isNew then @oplog else null
         if @isNew
           # TODO Move source defaults out of constructor?
           sources = SubClass._sources
@@ -199,18 +73,19 @@ Schema.extend = (name, namespace, config) ->
   for staticName, fn of @_statics
     SubClass.static staticName, fn
 
-  SubClass._fields = {}
+  SubClass.fields = {}
   SubClass.field = (fieldName, setToField) ->
-    return field if field = @_fields[fieldName]
-    @_fields[fieldName] = setToField
+    return field if field = @fields[fieldName]
+    @fields[fieldName] = setToField
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
     field = Schema.inferType descriptor, fieldName
     SubClass.field fieldName, field
 
-  SubClass.cast = (val) ->
+  SubClass.cast = (val, oplog) ->
     if val.constructor == Object
+      return new @ val, true, oplog if oplog
       return new @ val
     if val instanceof @
       return val
@@ -235,8 +110,56 @@ Schema.static = (name, fn) ->
   decorateDescendants @_subclasses, name, fn
   return @
 
-# TODO Setup method and data structure that is used to
-# define async flow control for reads/writes
+Schema.fromPath = (path) ->
+  pivot = path.indexOf '.'
+  namespace = path.substring 0, pivot
+  path = path.substring pivot+1
+  pivot = path.indexOf '.'
+  id = path.substring 0, pivot
+  path = path.substring pivot+1
+  return { Skema: @_schemas[namespace], id, path }
+
+
+# Send the oplog to the data sources, where they
+# convert the ops into db commands and exec them
+#
+# @param {Array} oplog
+# @param {Function} callback(err, doc)
+# @param {Schema} doc that originates the applyOps call
+Schema.applyOps = (oplog, callback) ->
+  sources = @_sources
+  remainingSources = sources.length
+  for source in sources
+    # TODO Perhaps each source adds to a QuerySet that then gets run
+    #      after all sources have acked the oplog. Perhaps we call
+    #      the thing that manages this the QueryManager or SourceManager?
+
+    # TODO We may need to aggregate all oplogs from fields that are Schemas
+    # when the current Schema doc's oplog does not implicitly carry the
+    # oplog of these fields that are Schemas. This may occur, e.g., when
+    #     foreignDoc.set foreignPathA, someVal
+    #     foreignDoc.push foreignPathB, thisDoc
+    #     thisDoc.save callback
+    # In this example, we would want save to also save the changes on foreignDoc
+    # because it is linked to thisDoc. "Linked" is defined as a connected subgraph
+    # of related documents where we follow all edges to documents that have "changed".
+
+    # Send oplog to all data sources. Data sources can choose to ignore 
+    # the query if it's not relevant to it, or it can choose to exec 
+    # the oplog selectively. How does this fit in with STM?
+    # We need to have a rollback mechanism
+    source.applyOps oplog, (err, extraAttrs) =>
+      # `extraAttrs` are attributes that were not present in the oplog
+      # when sent to the source, but that were then created by the source.
+      # These new extraAttr need to be written back to the Schema document
+      # -- e.g., auto-incrementing primary key in MySQL
+      --remainingSources
+      return callback err if err
+      if extraAttrs
+        for attrName, attrVal of extraAttrs
+          doc._doc[attrName] = attrVal
+      unless remainingSources
+        callback err
 
 Schema.static
   _sources: []
@@ -246,54 +169,25 @@ Schema.static
     for field, descriptor of fieldsConfig
       # Setup handlers in the data source
       source.addField @, field, descriptor
-  fromPath: (path) ->
-    pivot = path.indexOf '.'
-    namespace = path.substring 0, pivot
-    path = path.substring pivot+1
-    return { path, schema: @_schemas[namespace] }
 
-  # Send the oplog to the data sources, where they
-  # convert the ops into db commands and exec them
-  #
-  # @param {Array} oplog
-  # @param {Function} callback(err, doc)
-  # @param {Schema} doc
-  applyOps: (oplog, callback, doc) ->
-    sources = @_sources
-    remainingSources = sources.length
-    for source in sources
-      # TODO Perhaps each source adds to a QuerySet that then gets run
-      #      after all sources have acked the oplog. Perhaps we call
-      #      the thing that manages this the QueryManager or SourceManager?
+  # Interim method during transition from non-Schema to
+  # Schema-based approach.
+  toOplog: (id, method, args) ->
+    [ [@constructor.namespace, {_id: id}, method, args] ]
 
-      # Send oplog to all data sources. Data sources can choose to ignore 
-      # the query if it's not relevant to it, or it can choose to exec 
-      # the oplog selectively. How does this fit in with STM?
-      # We need to have a rollback mechanism
-      source.applyOps oplog, (err, extraAttrs) =>
-        # `extraAttrs` are attributes that were not present in the oplog
-        # when sent to the source, but that were then created by the source.
-        # These new extraAttr need to be written back to the Schema document
-        # -- e.g., auto-incrementing primary key in MySQL
-        --remainingSources
-        return callback err if err
-        if extraAttrs
-          for attrName, attrVal of extraAttrs
-            doc._doc[attrName] = attrVal
-        unless remainingSources
-          callback err, doc
-
-  create: (attrs, callback) ->
-    obj = new @(attrs)
-    obj.save callback
+  create: (attrs, callback, oplog = Schema.oplog) ->
+    obj = new @(attrs, true, oplog)
+    obj.save (err) ->
+      return callback err if err
+      callback null, obj
 
   update: (conds, attrs, callback) ->
     oplog = ([@namespace, conds, 'set', path, val] for path, val of attrs)
-    @applyOps oplog, callback
+    Schema.applyOps oplog, callback
 
   destroy: (conds, callback) ->
     oplog = [ [@namespace, conds] ]
-    @applyOps oplog, callback
+    Schema.applyOps oplog, callback
 
   findById: (id, callback) ->
     query = { conds: {id: id}, meta: '*' }
@@ -324,14 +218,14 @@ merge Schema::,
 
   _assignAttrs: (name, val, obj = @_doc) ->
     Skema = @constructor
-    if field = Skema._fields[name]
-      return obj[name] = field.cast val
+    if field = Skema.fields[name]
+      return obj[name] = field.cast val, if @isNew then @oplog else null
     
     if val.constructor == Object
       for k, v of val
         nextObj = obj[name] ||= {}
         @_assignAttrs k, v, nextObj
-      return
+      return obj[name]
 
     throw new Error "Either #{name} isn't a field of #{Skema._name}, or #{val} is not an Object"
 
@@ -341,9 +235,23 @@ merge Schema::,
     return obj
 
   set: (attr, val, callback) ->
-    @_assignAttrs attr, val
-    conds = {_id} if _id = @_doc._id
-    @oplog.push [@constructor.namespace, conds, 'set', attr, val]
+    oplogIndex = @oplog.length
+    val = @_assignAttrs attr, val
+    if _id = @_doc._id
+      conds = {_id}
+    else
+      conds = __cid__: @cid
+    if val instanceof Schema
+      if fkey = val.get('_id')
+        setTo = _id: fkey
+      else
+        setTo = cid: val.cid
+      @oplog.splice oplogIndex, 0, [@, @constructor.namespace, conds, 'set', attr, setTo]
+      # Leaving off a val means assign this attr to the
+      # document represented in the next op
+    else
+      @oplog.push [@, @constructor.namespace, conds, 'set', attr, val]
+    # Otherwise this operation is stored in val's oplog, since val is a Schema document
     if @_atomic
       @save callback
     return @
@@ -355,7 +263,7 @@ merge Schema::,
 
   del: (attr, callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [@constructor.namespace, conds, 'del', attr]
+    @oplog.push [@, @constructor.namespace, conds, 'del', attr]
     if @_atomic
       @save callback
     return @
@@ -363,8 +271,8 @@ merge Schema::,
   # self-destruct
   destroy: (callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [@constructor.namespace, conds, 'destroy']
-    @constructor.applyOps oplog, callback
+    @oplog.push [@, @constructor.namespace, conds, 'destroy']
+    Schema.applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
     if 'function' != typeof callback
@@ -374,26 +282,25 @@ merge Schema::,
 
     # TODO DRY - This same code apperas in _assignAttrs
     # TODO In fact, this may already be part of Field::cast
-    field = @constructor._fields[attr]
+    field = @constructor.fields[attr]
     vals = field.cast vals
 
     arr.push vals...
     conds = {_id} if _id = @_doc._id
-    @oplog.push [@constructor.namespace, conds, 'push', attr, vals...]
+    @oplog.push [@, @constructor.namespace, conds, 'push', attr, vals...]
     if @_atomic
       @save callback
     return @
 
   # @param {Function} callback(err, document)
   save: (callback) ->
-    oplog = @oplog
-    @oplog = []
-    Skema = @constructor
-    Skema.applyOps oplog, callback, @
+    oplog = @oplog.slice()
+    @oplog.reset()
+    Schema.applyOps oplog, callback
 
   validate: ->
     errors = []
-    for fieldName, field of @constructor._fields
+    for fieldName, field of @constructor.fields
       result = field.validate(@_doc[fieldName])
       continue if true == result
       errors = errors.concat result

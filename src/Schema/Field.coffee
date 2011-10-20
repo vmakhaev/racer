@@ -1,18 +1,25 @@
 # Encapsulates the configuration of a field in a logical schema.
 # A field is a declared attribute on a custom Schema that is associated with a type
 # and configuration specific to the association of the type to this attribute -- e.g.,
-# custom validations.
+# define custom validations at the Field level that do not
+# pollute the validation definitions set at the Type or Schema level.
 
+# @constructor Field
+# @param {Schema|Type} the type of this field
 Field = module.exports = (@type) ->
   @validators = []
   return
 
 Field:: =
-  cast: (val) -> if @type.cast then @type.cast val else val
+  cast: (val, oplog) -> if @type.cast then @type.cast val, oplog else val
+
+  # Defines a validator fn
   validator: (fn) ->
     @validators.push fn
     return @
 
+  # Runs the defined validators against val
+  # @return {Boolean|[Error]} returns true or an array of errors
   validate: (val) ->
     errors = []
     for fn in @validators

@@ -35,7 +35,7 @@ LogicalQuery:: =
 
   castConditions: ->
     conds = @_conditions
-    fields = @schema._fields
+    fields = @schema.fields
     for k, v of conds
       field = fields[k]
       conds[k] = field.cast v if field.cast
