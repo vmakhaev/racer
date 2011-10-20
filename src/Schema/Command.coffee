@@ -1,7 +1,7 @@
 Promise = require '../Promise'
 
-Command = module.exports = (@ns, @conds, @opMethod, @doc) ->
-  @cid = cid if cid = @conds.__cid__
+Command = module.exports = (@ns, @conds, @doc) ->
+  @cid = cid if cid = @conds?.__cid__
   @method
   @args
   return

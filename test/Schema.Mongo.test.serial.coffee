@@ -12,13 +12,14 @@ ObjectId = null
 module.exports =
   setup: (done) ->
     mongo = new Mongo
-    mongo.connect 'mongodb://localhost/racer_test'
     {ObjectId} = require 'Schema/Mongo/types'
+
+    # Reset this static variable, to keep tests independent
+    Schema._sources = []
 
     Blog = Schema.extend 'Blog', 'blogs',
       _id: String
       name: String
-    Blog._sources = []
 
     Dog = Schema.extend 'Dog', 'dogs',
       _id: String
@@ -44,7 +45,6 @@ module.exports =
       # in a Schema definition. So perhaps, it is more accurate
       # to say that Schema can have a Type interface
     #  group: schema('Group')
-    User._sources = []
 
     # mongo.connect 'mongodb://localhost/racer_test'
     #User.source mongo, 'los_users',
@@ -72,7 +72,6 @@ module.exports =
       status: String
       author: User
 
-    Tweet._sources = []
 
     Tweet.source mongo, 'tweets',
       _id: ObjectId
@@ -85,7 +84,6 @@ module.exports =
       name: String
     #  users: [User]
 
-    Group._sources = []
 
     Group.source mongo, 'groups',
       _id: ObjectId
@@ -149,12 +147,19 @@ module.exports =
     #   _id: ObjectId
     # ,
     #   blog: Blog.authorId
+    mongo.connect 'mongodb://localhost/racer_test'
     mongo.flush done
 
   teardown: (done) ->
     mongo.flush ->
-      mongo.disconnect()
-      done()
+      mongo.disconnect ->
+        Blog = null
+        Dog = null
+        User = null
+        Group = null
+        Tweet = null
+        ObjectId = null
+        done()
 
   'primary key _id should be created on saving a new doc': (done) ->
     u = new User name: 'Brian'
@@ -401,12 +406,12 @@ module.exports =
     done()
 
   '''should persist a relation specified as an embedded array of
-  documents as an embedded array of object literals on Mongo''': (done) ->
+  documents as an embedded array of object literals on Mongo @single''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
-    u.save (err, createdUser) ->
+    u.save (err) ->
       should.equal null, err
-      _id = ObjectId.fromString createdUser.get '_id'
+      _id = ObjectId.fromString u.get '_id'
       mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
         should.equal null, err
         json.should.eql

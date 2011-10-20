@@ -164,7 +164,7 @@ Schema.applyOps = (oplog, callback) ->
 Schema.static
   _sources: []
   source: (source, ns, fieldsConfig) ->
-    @_sources.push source
+    Schema._sources.push source
     source.schemas[ns] = @
     for field, descriptor of fieldsConfig
       # Setup handlers in the data source
@@ -286,7 +286,10 @@ merge Schema::,
     vals = field.cast vals
 
     arr.push vals...
-    conds = {_id} if _id = @_doc._id
+    if _id = @_doc._id
+      conds = {_id}
+    else
+      conds = __cid__: @cid
     @oplog.push [@, @constructor.namespace, conds, 'push', attr, vals...]
     if @_atomic
       @save callback
