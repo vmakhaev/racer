@@ -499,7 +499,7 @@ module.exports =
     ]
     done()
 
-  'should create a new $unset query for a single del @single': (done) ->
+  'should create a new $unset command for a single del': (done) ->
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
@@ -516,8 +516,8 @@ module.exports =
     done()
 
   '''a 2nd sequential del on the same schema doc but different
-  field should add the field to the existing update $unset query
-  involving the first del's field @single''': (done) ->
+  field should add the field to the existing update $unset command
+  involving the first del's field''': (done) ->
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
@@ -534,13 +534,13 @@ module.exports =
     ]
     done()
 
-  'should create a new update $push query for a single push': (done) ->
+  'should create a new update $push command for a single push': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs'
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -551,13 +551,13 @@ module.exports =
     done()
 
   '''pushing multiple items with a single push should result
-  in a $pushAll query''': (done) ->
+  in a $pushAll command''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs', 'sf'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs', 'sf'
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -569,12 +569,12 @@ module.exports =
 
   '2 pushes should result in a $pushAll': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs'
-    s.push 'tags', 'sf'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs'
+    u.push 'tags', 'sf'
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -585,15 +585,18 @@ module.exports =
     done()
 
   '''a single item push on field A, followed by a single item
-  push on field B should result in 2 $push queries''': (done) ->
+  push on field B should result in 2 $push commands''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs'
-    s.push 'keywords', 'sf'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 2
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs'
+    u.push 'keywords', 'sf'
+    cmdSet = mongo._oplogToCommandSet u.oplog
 
-    {method, args} = queries[0]
+    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds.should.have.length 2
+
+    cmd = cmdSet.commandsById[cmdIds[0]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -602,7 +605,8 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    {method, args} = queries[1]
+    cmd = cmdSet.commandsById[cmdIds[1]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -614,16 +618,19 @@ module.exports =
     done()
 
   '''a single item push on field A, followed by a multi item
-  push on field B should result in 1 $push query and 1 $pushAll
-  query''': (done) ->
+  push on field B should result in 1 $push command and 1 $pushAll
+  command''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs'
-    s.push 'keywords', 'sf', 'socal'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 2
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs'
+    u.push 'keywords', 'sf', 'socal'
+    cmdSet = mongo._oplogToCommandSet u.oplog
 
-    {method, args} = queries[0]
+    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds.should.have.length 2
+
+    cmd = cmdSet.commandsById[cmdIds[0]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -632,7 +639,8 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    {method, args} = queries[1]
+    cmd = cmdSet.commandsById[cmdIds[1]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -644,16 +652,19 @@ module.exports =
     done()
 
   '''a multi item push on field A, followed by a single item
-  push on field B should result in 1 $pushAll query and 1 $push
-  query''': (done) ->
+  push on field B should result in 1 $pushAll command and 1 $push
+  command''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.push 'tags', 'nodejs', 'sf'
-    s.push 'keywords', 'socal'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 2
+    u = new User _id: 1, isNew
+    u.push 'tags', 'nodejs', 'sf'
+    u.push 'keywords', 'socal'
+    cmdSet = mongo._oplogToCommandSet u.oplog
 
-    {method, args} = queries[0]
+    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds.should.have.length 2
+
+    cmd = cmdSet.commandsById[cmdIds[0]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -662,7 +673,8 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    {method, args} = queries[1]
+    cmd = cmdSet.commandsById[cmdIds[1]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -674,15 +686,18 @@ module.exports =
     done()
 
   '''a set on field A followed by a single item push on field B
-  should result in 1 $set and 1 $push query''': (done) ->
+  should result in 1 $set and 1 $push command''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.set 'name', 'Brian'
-    s.push 'keywords', 'socal'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 2
+    u = new User _id: 1, isNew
+    u.set 'name', 'Brian'
+    u.push 'keywords', 'socal'
+    cmdSet = mongo._oplogToCommandSet u.oplog
 
-    {method, args} = queries[0]
+    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds.should.have.length 2
+
+    cmd = cmdSet.commandsById[cmdIds[0]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -691,7 +706,8 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    {method, args} = queries[1]
+    cmd = cmdSet.commandsById[cmdIds[1]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -705,17 +721,20 @@ module.exports =
   '''an oplog involving 2 different conditions should result in 2 separate
   queries for oplog single-item push on doc matching conditions A, then
   single-item push on doc matching conditions B''': (done) ->
+    sharedOplog = []
     isNew = false
-    s1 = new User _id: 1, isNew
-    s2 = new User _id: 2, isNew
-    s1.push 'tags', 'nodejs'
-    s2.push 'tags', 'sf'
-    oplog = s1.oplog.concat s2.oplog
+    u1 = new User _id: 1, isNew, sharedOplog
+    u2 = new User _id: 2, isNew, sharedOplog
+    u1.push 'tags', 'nodejs'
+    u2.push 'tags', 'sf'
 
-    queries = mongo._oplogToCommandSet oplog
-    queries.length.should.equal 2
+    cmdSet = mongo._oplogToCommandSet sharedOplog
 
-    {method, args} = queries[0]
+    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds.length.should.equal 2
+
+    cmd = cmdSet.commandsById[cmdIds[0]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -724,7 +743,8 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    {method, args} = queries[1]
+    cmd = cmdSet.commandsById[cmdIds[1]]
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
