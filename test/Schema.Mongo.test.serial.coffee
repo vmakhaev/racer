@@ -287,7 +287,7 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal @single''': (done) ->
+  and set as an object literal''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -465,15 +465,14 @@ module.exports =
           done()
     , oplog
 
-  # Query building
-  'should create a new update $set query for a single set': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
-    s.set 'name', 'Brian'
-    queries = mongo._queriesForOps s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
-    method.should.equal 'update'
+  # Command building
+  'should create a new update $set command for a single set': (done) ->
+    isNew = false
+    u = new User _id: 1, isNew
+    u.set 'name', 'Brian'
+    commandSet = mongo._oplogToCommandSet u.oplog
+    cmd = commandSet.singleCommand
+    {method, args} = cmd.compile()
     args.should.eql [
       'users'
       {_id: 1}
@@ -482,15 +481,15 @@ module.exports =
     ]
     done()
 
-  '''should add a 2nd set to an existing update $set query
-  after a 1st set generates that query''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
-    s.set 'name', 'Brian'
-    s.set 'age', 26
-    queries = mongo._queriesForOps s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+  '''should add a 2nd set to an existing update $set command
+  after a 1st set generates that command''': (done) ->
+    isNew = false
+    u = new User _id: 1, isNew
+    u.set 'name', 'Brian'
+    u.set 'age', 26
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -500,13 +499,13 @@ module.exports =
     ]
     done()
 
-  'should create a new $unset query for a single del': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
-    s.del 'name'
-    queries = mongo._queriesForOps s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+  'should create a new $unset query for a single del @single': (done) ->
+    isNew = false
+    u = new User _id: 1, isNew
+    u.del 'name'
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'
@@ -519,11 +518,11 @@ module.exports =
   '''a 2nd sequential del on the same schema doc but different
   field should add the field to the existing update $unset query
   involving the first del's field''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.del 'name'
     s.del 'age'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
@@ -536,10 +535,10 @@ module.exports =
     done()
 
   'should create a new update $push query for a single push': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
@@ -553,10 +552,10 @@ module.exports =
 
   '''pushing multiple items with a single push should result
   in a $pushAll query''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs', 'sf'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
@@ -569,11 +568,11 @@ module.exports =
     done()
 
   '2 pushes should result in a $pushAll': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs'
     s.push 'tags', 'sf'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 1
     {method, args} = queries[0]
     method.should.equal 'update'
@@ -587,11 +586,11 @@ module.exports =
 
   '''a single item push on field A, followed by a single item
   push on field B should result in 2 $push queries''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs'
     s.push 'keywords', 'sf'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
@@ -617,11 +616,11 @@ module.exports =
   '''a single item push on field A, followed by a multi item
   push on field B should result in 1 $push query and 1 $pushAll
   query''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs'
     s.push 'keywords', 'sf', 'socal'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
@@ -647,11 +646,11 @@ module.exports =
   '''a multi item push on field A, followed by a single item
   push on field B should result in 1 $pushAll query and 1 $push
   query''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.push 'tags', 'nodejs', 'sf'
     s.push 'keywords', 'socal'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
@@ -676,11 +675,11 @@ module.exports =
 
   '''a set on field A followed by a single item push on field B
   should result in 1 $set and 1 $push query''': (done) ->
-    addOp = false
-    s = new User _id: 1, addOp
+    isNew = false
+    s = new User _id: 1, isNew
     s.set 'name', 'Brian'
     s.push 'keywords', 'socal'
-    queries = mongo._queriesForOps s.oplog
+    queries = mongo._oplogToCommandSet s.oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]
@@ -706,14 +705,14 @@ module.exports =
   '''an oplog involving 2 different conditions should result in 2 separate
   queries for oplog single-item push on doc matching conditions A, then
   single-item push on doc matching conditions B''': (done) ->
-    addOp = false
-    s1 = new User _id: 1, addOp
-    s2 = new User _id: 2, addOp
+    isNew = false
+    s1 = new User _id: 1, isNew
+    s2 = new User _id: 2, isNew
     s1.push 'tags', 'nodejs'
     s2.push 'tags', 'sf'
     oplog = s1.oplog.concat s2.oplog
 
-    queries = mongo._queriesForOps oplog
+    queries = mongo._oplogToCommandSet oplog
     queries.length.should.equal 2
 
     {method, args} = queries[0]

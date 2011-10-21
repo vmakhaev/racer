@@ -107,7 +107,7 @@ MongoSource = module.exports = DataSource.extend
         $atomics = Object.keys cmd.val
         if $atomics.length > 1
           throw new Error 'Should not have > 1 $atomic per command'
-        if '$set' of $atomics
+        if '$set' of cmd.val
           matchingCmd = cmd
           break
     
@@ -152,7 +152,7 @@ MongoSource = module.exports = DataSource.extend
           @_assignToUnflattened matchingCmd.val, path, val
       else
         matchingCmd.method = 'update'
-        (delta = {})[path] = value
+        (delta = {})[path] = val
         matchingCmd.val = { $set: delta}
 
       cmdSet.index matchingCmd
@@ -172,28 +172,35 @@ MongoSource = module.exports = DataSource.extend
     return cmdSet
 
   del: (ns, field, cmd, conds, path) ->
-    # Assign or augment cmd.(method|conds|val)
-    {method: cmethod, conds: cconds} = cmd
-    if cmethod is undefined && cconds is undefined
-      cmd.ns = ns
-      cmd.method = 'update'
-      cmd.conds = conds
+    cmds = cmdSet.findCommands ns, conds
+
+    for cmd in cmds
+      cmethod = cmd.method
+      if cmethod == 'update'
+        $atomics = Object.keys cmd.val
+        if $atomics.length > 1
+          throw new Error 'Should not have > 1 $atomic per command'
+        if '$unset' of cmd.val
+          matchingCmd = cmd
+          break
+
+    unless matchingCmd
+      matchingCmd = new Command ns, conds, doc
+      matchingCmd.method = 'update'
       (unset = {})[path] = 1
-      cmd.val = { $unset: unset }
-    else if cmethod == 'update'
-      if (unset = cmd.val.$unset) && objEquiv cconds, conds
-        unset[path] = 1
+      matchingCmd.val = $unset: unset
+
+      cmdSet.index matchingCmd
+      cmdSet.position matchingCmd
+
+      return cmdSet
+
+    switch matchingCmd.method
+      when 'update'
+        cmd.val.$unset[path] = 1
       else
-        # Either the existing cmd involves another $atomic, or the
-        # conditions of the existing cmd do not match the incoming
-        # op conditions. In both cases, we must create a new cmd
-        nextCommand = {}
-        [nextCommand] = @del ns, field, nextCommand, conds, path, val, ver
-    else
-      # The current cmd involves
-      nextCommand = {}
-      [nextCommand] = @del ns, field, nextCommand, conds, path, val, ver
-    return [cmd, nextCommand]
+        throw new Error 'Unsupported'
+    return cmdSet
 
   push: (cmdSet, doc, ns, field, conds, path, values...) ->
     values = field.cast values if field.cast
