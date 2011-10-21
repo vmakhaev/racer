@@ -220,8 +220,9 @@ MongoSource = module.exports = DataSource.extend
         $atomics = Object.keys cmd.val
         if $atomics.length > 1
           throw new Error 'Should not have > 1 $atomic per command'
-        if ('$push' of $atomics) || ('$pushAll' of $atomics)
-          matchingCmd = cmd
+        if pushParam = cmd.val.$push || cmd.val.$pushAll
+          if path of pushParam
+            matchingCmd = cmd
           break
 
     unless matchingCmd
@@ -247,7 +248,7 @@ MongoSource = module.exports = DataSource.extend
 
     switch matchingCmd.method
       when 'update'
-        if existingPush = matchingCmd.$push[path]
+        if existingPush = matchingCmd.val.$push[path]
           matchingCmd.val.$pushAll = {}
           matchingCmd.val.$pushAll[path] = [existingPush, values...]
           delete matchingCmd.val.$push
