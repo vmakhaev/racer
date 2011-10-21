@@ -66,31 +66,6 @@ DataSource::=
       return callback err if err
       callback null
 
-    # TODO Deprecate the rest of this method
-    queries = @_queriesForOps oplog, callback
-    remainingQueries = queries.length
-    for {method, args} in queries
-      # e.g., adapter.update 'users', {_id: id}, {$set: {name: 'Brian', age: '26'}}, {upsert: true, safe: true}, callback
-      adapter[method] args..., (err, extraAttrs) =>
-        --remainingQueries
-        return callback err if err
-        return unless extraAttrs
-        ns = args[0]
-        # Transform data schema attributes from db result 
-        # into logical schema attributes
-        LogicalSkema = @schemas[ns]
-        nsFields = @fields[ns]
-        for attrName, attrVal of extraAttrs
-          dataField = nsFields[attrName]
-          logicalField = LogicalSkema.fields[attrName]
-          logicalType = logicalField.type
-          logicalTypeName = logicalType.name || logicalType._name
-          if dataField._name != logicalTypeName
-            extraAttrs[attrName] = dataField['to' + logicalTypeName](attrVal)
-        unless remainingQueries
-          callback null, extraAttrs
-    return
-
   findOne: (ns, conditions, callback) ->
     nsFields = @fields[ns]
     # 1. Cast the query conditions
