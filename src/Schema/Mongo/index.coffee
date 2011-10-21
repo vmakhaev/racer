@@ -77,6 +77,17 @@ MongoSource = module.exports = DataSource.extend
   # multiple sequental push ops into a single atomic push
   _minifyOps: (oplog) -> oplog
 
+  _assignToUnflattened: (assignTo, flattenedPath, val) ->
+    parts = flattenedPath.split '.'
+    curr = assignTo
+    lastIndex = parts.length - 1
+    for part, i in parts
+      if i == lastIndex
+        curr[part] = val
+      else
+        curr = curr[part] ||= {}
+    return curr
+
   # TODO Better lang via MongoCommandBuilder.handle 'set', (...) -> ?
   # @param {CommandSet} is the current command set that we are building
   # @param {String} ns is the namespace
@@ -87,7 +98,6 @@ MongoSource = module.exports = DataSource.extend
   # @param {Number} ver is the oplog op's ver
   set: (cmdSet, doc, ns, field, conds, path, val, ver) ->
     cmds = cmdSet.findCommands ns, conds
-
     for cmd in cmds
       cmethod = cmd.method
       if cmethod == 'insert'
@@ -118,11 +128,28 @@ MongoSource = module.exports = DataSource.extend
         @set cmdSet, ns, field.type, conds, path, pkeyVal, ver
         return cmdSet
 
+    if field._name == 'Object' && cid = val.cid
+      pending = cmdSet.pendingByCid[cid] ||= []
+      pending.push Array::slice.call arguments, 1
+      return cmdSet
+
     unless matchingCmd
+      if cid = conds.__cid__
+        if pending = cmdSet.pendingByCid[cid]
+          for [pdoc, pns, pfield, pconds, ppath, pval, pver] in pending
+            @set cmdSet, pdoc, pns, field, pconds, ppath + '.' + path, val, pver
+          # We want to keep around pending for any future ops that are grounded in cid
+          # , so we don't delete cmdSet.pendingByCid[cid]
+          return cmdSet
+
+
       matchingCmd = new Command ns, conds, doc
       if conds.__cid__
         matchingCmd.method = 'insert'
-        (matchingCmd.val = {})[path] = val
+        if -1 == path.indexOf '.'
+          (matchingCmd.val = {})[path] = val
+        else
+          @_assignToUnflattened matchingCmd.val, path, val
       else
         matchingCmd.method = 'update'
         (delta = {})[path] = value
@@ -138,7 +165,7 @@ MongoSource = module.exports = DataSource.extend
       when 'update'
         cmd.val.$set[path] = val
       when 'insert'
-        cmd.val[path] = val
+        @_assignToUnflattened cmd.val, path, val
       else
         throw new Error 'Implement for other incoming method ' + matchingCmd.method
 
