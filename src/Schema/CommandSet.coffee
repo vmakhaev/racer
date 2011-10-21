@@ -12,6 +12,9 @@ CommandSet = module.exports = ->
   @commandsById = {}
 
   @commandsByCid = {}
+
+  # We throw op data into here that depends on a cid that we have yet to see.
+  @pendingByCid = {}
   return
 
 # TODO Eventually, this should sit above the
