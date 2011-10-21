@@ -517,14 +517,14 @@ module.exports =
 
   '''a 2nd sequential del on the same schema doc but different
   field should add the field to the existing update $unset query
-  involving the first del's field''': (done) ->
+  involving the first del's field @single''': (done) ->
     isNew = false
-    s = new User _id: 1, isNew
-    s.del 'name'
-    s.del 'age'
-    queries = mongo._oplogToCommandSet s.oplog
-    queries.length.should.equal 1
-    {method, args} = queries[0]
+    u = new User _id: 1, isNew
+    u.del 'name'
+    u.del 'age'
+    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmd = cmdSet.singleCommand
+    {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
       'users'

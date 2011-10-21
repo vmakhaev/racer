@@ -171,7 +171,7 @@ MongoSource = module.exports = DataSource.extend
 
     return cmdSet
 
-  del: (ns, field, cmd, conds, path) ->
+  del: (cmdSet, doc, ns, field, conds, path) ->
     cmds = cmdSet.findCommands ns, conds
 
     for cmd in cmds
