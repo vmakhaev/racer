@@ -38,15 +38,11 @@ Command:: =
       if doc = @doc
         # Transform data schema attributes from db result 
         # into logical schema attributes
-        LogicalSkema = source.schemas[@ns]
-        nsFields = source.fields[@ns]
+        dataSchema = source.dataSchemas[@ns]
         for attrName, attrVal of extraAttrs
-          dataField = nsFields[attrName]
-          logicalField = LogicalSkema.fields[attrName]
-          logicalType = logicalField.type
-          logicalTypeName = logicalType.name || logicalType._name
-          if dataField._name != logicalTypeName
-            attrVal = dataField['to' + logicalTypeName](attrVal)
+          dataField = dataSchema[attrName]
+          if dataField.uncast
+            attrVal = dataField.uncast attrVal
           doc._doc[attrName] = attrVal
 
       callback err, extraAttrs

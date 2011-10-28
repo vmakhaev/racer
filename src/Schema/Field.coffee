@@ -31,3 +31,19 @@ Field:: =
     errors = errors.concat result unless true == result
 
     return if errors.length then errors else true
+
+  genDataFieldFlow: ->
+    return dataFieldFlow if dataFieldFlow = @dataFieldFlow
+    dataFieldFlow = []
+    if readFlow = @readFlow || @schema.readFlow
+      dataFields = @dataFields
+      for [sources, parallelCallback] in readFlow
+        matchingDFields = (dField for dField in dataFields where -1 != sources.indexOf dField.source)
+        dataFieldFlow.push [matchingDFields, parallelCallback]
+    else
+      console.warn '''Source lookup order not explicitly defined for this 
+        logical field #{logicalField.path} or its logical schema i
+        {LogicalSkema._name}. Falling back to parallel fetching of #{logicalField.path}'s
+        dataFields'''
+      dataFieldFlow.push [matchingDFields]
+    return @dataFieldFlow = dataFieldFlow
