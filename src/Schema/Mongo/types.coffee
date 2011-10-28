@@ -1,15 +1,22 @@
 Schema = require '../index'
+{merge} = require '../../util'
 
-# TODO Add createField(opts) ?
+baseType =
+  createField: -> return Object.create @
+  extend: (name, conf) ->
+    extType = Object.create @
+    extType._name = name
+    merge extType, conf
+    return extType
 
 NativeObjectId = require('mongodb').BSONPure.ObjectID
-exports.ObjectId =
-  _name: 'ObjectId'
-  NativeObjectId: NativeObjectId
-
+exports.ObjectId = baseType.extend 'ObjectId',
   cast: (val) ->
     return val if val instanceof NativeObjectId
     return @fromString val
+
+  uncast: (oid) ->
+    return oid.toString()
 
   defaultTo: -> new NativeObjectId
 
@@ -22,29 +29,30 @@ exports.ObjectId =
     return NativeObjectId.toString() unless arguments.length
     return oid.toHexString()
 
-exports.Array =
-  _name: 'Array'
-  
+exports.Array = baseType.extend 'Array',
   cast: (list) ->
     # Returns an array comprehension
+    memberType = @memberType
     for member in list
-      if @memberType.cast
-        @memberType.cast member
+      if memberType.cast
+        memberType.cast member
       else
         member
+
+  createField: ({memberType}) ->
+    field = Object.create @
+    field.memberType = memberType
+    return field
 
 # Object means an embedded document or the member of an embedded 
 # array if this is a recursive inferType call
 # TODO Can we remove exports.Object type?
-exports.Object =
-  _name: 'Object'
+exports.Object = baseType.extend 'Object',
   cast: (val) ->
     return val.toJSON() if val instanceof Schema
     return val
 
-exports.Ref =
-  _name: 'Ref'
-
+exports.Ref = baseType.extend 'Ref',
   cast: (val) ->
     return @pkeyType.cast val
 
@@ -54,3 +62,6 @@ exports.Ref =
     field.pkeyName = pkeyName
     field.source = source
     return field
+
+  deref: (pkeyVal, callback) ->
+    @source.findOne 

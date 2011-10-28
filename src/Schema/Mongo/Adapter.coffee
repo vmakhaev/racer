@@ -15,7 +15,6 @@ DISCONNECTING = 4
 #   port: 27017
 #   database: 'example'
 MongoAdapter = module.exports = (conf) ->
-  @nextId = nextId++
   EventEmitter.call @
   @_loadConf conf if conf
   @_state = DISCONNECTED
@@ -111,7 +110,6 @@ MongoAdapter:: =
 
 MongoCollection = mongo.Collection
 
-nextId = 1
 Collection = (name, db) ->
   self = this
   self.name = name
