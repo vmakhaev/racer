@@ -3,6 +3,7 @@ Type = require './Type'
 Promise = require '../Promise'
 {EventEmitter} = require 'events'
 {merge} = require '../util'
+FlowBuilder = require './FlowBuilder'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
@@ -14,10 +15,10 @@ Schema = module.exports = ->
 Schema._schemas = {}
 Schema._subclasses = []
 Schema._sources = {}
-Schema.extend = (name, namespace, config) ->
+Schema.extend = (name, ns, config) ->
   ParentClass = @
   # Constructor
-  # @param {Object} attrs maps path names to values
+  # @param {Object} attrs maps path names to their values
   # @param {Boolean} isNew; will be false when populating this from the
   #                  results of a Query
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
@@ -31,7 +32,6 @@ Schema.extend = (name, namespace, config) ->
 
     @_doc = {}
 
-    # Invoke parent constructors
     ParentClass.apply @, arguments
 
     if attrs
@@ -43,21 +43,22 @@ Schema.extend = (name, namespace, config) ->
         if field
           attrVal = field.cast attrVal, if @isNew then @oplog else null
         if @isNew
-          # TODO Move source defaults out of constructor?
-          sources = Schema._sources
-          for _, source of sources
-            source.addDefaults @
           @set attrName, attrVal
         else
           @_assignAttrs attrName, attrVal
+    if @isNew
+      # TODO Move source defaults out of constructor?
+      dataSchemas = @dataSchemas
+      for dataSchema in dataSchemas
+        dataSchema.addDefaults @
     return
 
-  SubClass:: = prototype = new @()
-  prototype.constructor = SubClass
+  SubClass:: = proto = new ParentClass()
+  proto.constructor = SubClass
 
   # SubClass.name is frozen to ""
   SubClass._name = name
-  SubClass.namespace = namespace
+  SubClass.ns = ns
 
   SubClass._subclasses = []
   SubClass._superclass = @
@@ -80,6 +81,7 @@ Schema.extend = (name, namespace, config) ->
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
     field = Schema.inferType descriptor, fieldName
+    field.sources = []
     SubClass.field fieldName, field
 
   SubClass.cast = (val, oplog) ->
@@ -90,7 +92,7 @@ Schema.extend = (name, namespace, config) ->
       return val
     throw new Error val + ' is neither an Object nor a ' + @_name
 
-  return Schema._schemas[namespace] = SubClass
+  return Schema._schemas[ns] = SubClass
 
 Schema._statics = {}
 Schema.static = (name, fn) ->
@@ -111,12 +113,12 @@ Schema.static = (name, fn) ->
 
 Schema.fromPath = (path) ->
   pivot = path.indexOf '.'
-  namespace = path.substring 0, pivot
+  ns = path.substring 0, pivot
   path = path.substring pivot+1
   pivot = path.indexOf '.'
   id = path.substring 0, pivot
   path = path.substring pivot+1
-  return { Skema: @_schemas[namespace], id, path }
+  return { Skema: @_schemas[ns], id, path }
 
 
 # Send the oplog to the data sources, where they
@@ -126,52 +128,59 @@ Schema.fromPath = (path) ->
 # @param {Function} callback(err, doc)
 # @param {Schema} doc that originates the applyOps call
 Schema.applyOps = (oplog, callback) ->
-  sources = (source for _, source of @_sources)
-  remainingSources = sources.length
-  for _source in sources
-    # TODO Perhaps each source adds to a QuerySet that then gets run
-    #      after all sources have acked the oplog. Perhaps we call
-    #      the thing that manages this the QueryManager or SourceManager?
+  cmdSet = new CommandSet
 
-    # TODO We may need to aggregate all oplogs from fields that are Schemas
-    # when the current Schema doc's oplog does not implicitly carry the
-    # oplog of these fields that are Schemas. This may occur, e.g., when
-    #     foreignDoc.set foreignPathA, someVal
-    #     foreignDoc.push foreignPathB, thisDoc
-    #     thisDoc.save callback
-    # In this example, we would want save to also save the changes on foreignDoc
-    # because it is linked to thisDoc. "Linked" is defined as a connected subgraph
-    # of related documents where we follow all edges to documents that have "changed".
+  for op in oplog
+    {doc, ns, conds, method, path, args} = operation.splat op
+    # TODO Handle nested paths
+    LogicalSkema = Schema._schemas[ns]
+    {dataFields, sources} = logicalField = LogicalSkema.fields[path]
 
-    # Send oplog to all data sources. Data sources can choose to ignore 
-    # the query if it's not relevant to it, or it can choose to exec 
-    # the oplog selectively. How does this fit in with STM?
-    # We need to have a rollback mechanism
-    source.applyOps oplog, (err, extraAttrs) =>
+    # TODO How does this fit in with STM? We need a rollback mechanism
+    for dataField in dataFields
+      {source} = dataField
+      source[method] cmdSet, doc, dataField, conds, args...
+
+#    for source in logicalField.sources
+#      dataField = source.dataSchemas[ns][path]
+#      source[method] cmdSet, doc, ns, dataField, conds, args...
+
+  return cmdSet.fire (err, extraAttrs) ->
+    return callback err if err
+    if extraAttrs
       # `extraAttrs` are attributes that were not present in the oplog
       # when sent to the source, but that were then created by the source.
       # These new extraAttr need to be written back to the Schema document
       # -- e.g., auto-incrementing primary key in MySQL
-      --remainingSources
-      return callback err if err
-      if extraAttrs
-        for attrName, attrVal of extraAttrs
-          doc._doc[attrName] = attrVal
-      unless remainingSources
-        callback err
+      for attrName, attrVal of extraAttrs
+        doc._doc[attrName] = attrVal
+    return callback null
 
 Schema.static
-  source: (source, ns, fieldsConfig) ->
+  dataSchemas: []
+  # We use this to define a "data source schema" and link it to
+  # this "logical Schema".
+  source: (source, ns, fieldsConf, virtualsConf) ->
+    unless fieldsConf
+      fieldsConf = ns
+      ns = @ns
     Schema._sources[source._name] ||= source
-    source.schemas[ns] = @
-    for field, descriptor of fieldsConfig
-      # Setup handlers in the data source
-      source.addField @, field, descriptor
+    dataSchema = source.createDataSchema @, ns, fieldsConf, virtualsConf
+    @dataSchemas.push dataSchema
 
-  # Interim method during transition from non-Schema to
+#      # In case data schema already exists
+#      # TODO Implement addDataFields and addVirtualFields
+#      for field, descriptor of fieldsConf
+#        source.addDataField @, ns, field, fieldsConf
+#      for virtual, descriptor of virtualsConf
+#        source.addVirtualField @, ns, virtual, descriptor
+    
+    return dataSchema
+
+  # Interim method used to help transition from non-Schema to
   # Schema-based approach.
   toOplog: (id, method, args) ->
-    [ [@constructor.namespace, {_id: id}, method, args] ]
+    [ [@constructor.ns, {_id: id}, method, args] ]
 
   create: (attrs, callback, oplog = Schema.oplog) ->
     obj = new @(attrs, true, oplog)
@@ -180,11 +189,11 @@ Schema.static
       callback null, obj
 
   update: (conds, attrs, callback) ->
-    oplog = ([@namespace, conds, 'set', path, val] for path, val of attrs)
+    oplog = ([@ns, conds, 'set', path, val] for path, val of attrs)
     Schema.applyOps oplog, callback
 
   destroy: (conds, callback) ->
-    oplog = [ [@namespace, conds] ]
+    oplog = [ [@ns, conds] ]
     Schema.applyOps oplog, callback
 
   findById: (id, callback) ->
@@ -199,6 +208,40 @@ Schema.static
   plugin: (plugin, opts) ->
     plugin @, opts
     return @
+
+  # defineReadFlow(callback)
+  # Invoking with this fn signature will result in defining
+  # a fallback read flow for the entire Logical Schema
+  #
+  # defineReadFlow(field, callback)
+  # Otherwise, invoking with this fn signature will result 
+  # in defining a read flow for the given fields
+  defineReadFlow: (args...) ->
+    callback = args.pop()
+    fieldNames = args
+    flowBuilder = new FlowBuilder
+
+    callback flowBuilder
+    if fieldNames.length
+      fields = @fields
+      for name in fieldNames
+        fields[name].dataFields.readFlow = flowBuilder.flow
+    else
+      @readFlow = flowBuilder.flow
+    return @
+
+  lookupField: (path) ->
+    return [field, ''] if field = @fields[path]
+    parts = path.split '.'
+    for part in parts
+      if subpath
+        subpath += '.' + part
+      else
+        subpath = part
+      if Skema = @fields[subpath]
+        [field, ownerPathRelToRoot] = Skema.lookupField path.substring(subpath.length + 1)
+        return [field, subpath + '.' + ownerPathRelToSkema]
+    throw new Error "path '#{path}' does not appear to be reachable from Schema #{@_name}"
 
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., Schema.find, Schema.findOne, etc
@@ -216,8 +259,8 @@ merge Schema::,
   toJSON: -> @_doc
 
   _assignAttrs: (name, val, obj = @_doc) ->
-    Skema = @constructor
-    if field = Skema.fields[name]
+    {fields, _name} = LogicalSkema = @constructor
+    if field = fields[name]
       return obj[name] = field.cast val, if @isNew then @oplog else null
     
     if val.constructor == Object
@@ -226,7 +269,7 @@ merge Schema::,
         @_assignAttrs k, v, nextObj
       return obj[name]
 
-    throw new Error "Either #{name} isn't a field of #{Skema._name}, or #{val} is not an Object"
+    throw new Error "Either #{name} isn't a field of #{_name}, or #{val} is not an Object"
 
   atomic: ->
     obj = Object.create @
@@ -245,11 +288,11 @@ merge Schema::,
         setTo = _id: fkey
       else
         setTo = cid: val.cid
-      @oplog.splice oplogIndex, 0, [@, @constructor.namespace, conds, 'set', attr, setTo]
+      @oplog.splice oplogIndex, 0, [@, @constructor.ns, conds, 'set', attr, setTo]
       # Leaving off a val means assign this attr to the
       # document represented in the next op
     else
-      @oplog.push [@, @constructor.namespace, conds, 'set', attr, val]
+      @oplog.push [@, @constructor.ns, conds, 'set', attr, val]
     # Otherwise this operation is stored in val's oplog, since val is a Schema document
     if @_atomic
       @save callback
@@ -262,7 +305,7 @@ merge Schema::,
 
   del: (attr, callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [@, @constructor.namespace, conds, 'del', attr]
+    @oplog.push [@, @constructor.ns, conds, 'del', attr]
     if @_atomic
       @save callback
     return @
@@ -270,7 +313,7 @@ merge Schema::,
   # self-destruct
   destroy: (callback) ->
     conds = {_id} if _id = @_doc._id
-    @oplog.push [@, @constructor.namespace, conds, 'destroy']
+    @oplog.push [@, @constructor.ns, conds, 'destroy']
     Schema.applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
@@ -279,9 +322,10 @@ merge Schema::,
       callback = null
     arr = @_doc[attr] ||= []
 
+    {fields, ns} = LogicalSkema = @constructor
     # TODO DRY - This same code apperas in _assignAttrs
     # TODO In fact, this may already be part of Field::cast
-    field = @constructor.fields[attr]
+    field = fields[attr]
     vals = field.cast vals
 
     arr.push vals...
@@ -289,7 +333,7 @@ merge Schema::,
       conds = {_id}
     else
       conds = __cid__: @cid
-    @oplog.push [@, @constructor.namespace, conds, 'push', attr, vals...]
+    @oplog.push [@, ns, conds, 'push', attr, vals...]
     if @_atomic
       @save callback
     return @
@@ -425,3 +469,7 @@ Schema.type 'Number',
 Schema.type 'Array',
   cast: (list) ->
     return (@memberType.cast member for member in list)
+
+operation =
+  splat: ([doc, ns, conds, method, args...]) ->
+    {doc, ns, conds, method, path: args[0], args}

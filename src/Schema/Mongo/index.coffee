@@ -16,9 +16,11 @@ MongoSource = module.exports = DataSource.extend
 
   types: types
 
-  # Where the magical interpretation happens of the right-hand-side vals
-  # of attributes in config of
-  #     CustomSchema.source source, ns, config
+  # Where the magical interpretation happens of the right-hand-side vals of fields in, e.g.,
+  #     CustomSchema.source(source, ns, {
+  #       fieldName: descriptorToInfer
+  #       fieldB:    anotherDescriptor
+  #     });
   inferType: (descriptor) ->
     if descriptor.constructor == Object
       if '$type' of descriptor
@@ -26,6 +28,7 @@ MongoSource = module.exports = DataSource.extend
         type = @inferType descriptor.$type
         delete descriptor.$type
         for flag, arg of descriptor
+          continue if flag == '$pkey'
           if 'function' == typeof type[flag]
             if Array.isArray arg
               type[flag] arg...
@@ -33,7 +36,6 @@ MongoSource = module.exports = DataSource.extend
               type[flag] arg
           else if type[flag] is undefined
             type[flag] = arg
-          else if flag == '$pkey'
           else
             throw new Error "Unsupported type descriptor flag #{flag}"
         return type
@@ -51,31 +53,14 @@ MongoSource = module.exports = DataSource.extend
 
     if Array.isArray descriptor
       arrayType = types['Array']
-      memberType = descriptor[0]
-      concreteArrayType = Object.create arrayType
-      concreteArrayType.memberType = @inferType memberType
-      return concreteArrayType
+      return arrayType.createField
+        memberType: @inferType descriptor[0]
 
     if type = types[descriptor.name || descriptor._name]
       return type
 
     # else String, Number, Object => Take things as they are
     return {}
-
-  _oplogToCommandSet: (oplog, cmdSet = new CommandSet) ->
-    for op in oplog
-      {doc, ns, conds, method, path, args} = operation.splat op
-
-      # TODO Handle nested paths
-
-      # Filter out paths that don't map to this Data Source
-      continue unless field = @fields[ns][path]
-      @[method] cmdSet, doc, ns, field, conds, args...
-    return cmdSet
-
-  # e.g., accomplish optimizations such as collapsing
-  # multiple sequental push ops into a single atomic push
-  _minifyOps: (oplog) -> oplog
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
     parts = flattenedPath.split '.'
@@ -96,39 +81,46 @@ MongoSource = module.exports = DataSource.extend
   # @param {String} path is the oplog op's path
   # @param {Object} val is the oplog op's val
   # @param {Number} ver is the oplog op's ver
-  set: (cmdSet, doc, ns, field, conds, path, val, ver) ->
-    cmds = cmdSet.findCommands ns, conds
+  set: (cmdSet, doc, dataField, conds, path, val) ->
+    {ns} = dataField
+    cmds = cmdSet.findCommands @_name, ns, conds
+
+    # Would be mice to have this inside something like CommandSet::matchingCmd,
+    # but the logic for this would be source dependent. Hence, we keep that logic here.
+    # As an alternative, we could subclass Command as MongoCommand and place the logic inside
+    # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
     for cmd in cmds
-      cmethod = cmd.method
+      {method: cmethod, val: cval} = cmd
       if cmethod == 'insert'
         matchingCmd = cmd
         break
       else if cmethod == 'update'
-        $atomics = Object.keys cmd.val
+        $atomics = Object.keys cval
         if $atomics.length > 1
           throw new Error 'Should not have > 1 $atomic per command'
-        if '$set' of cmd.val
+        if '$set' of cval
           matchingCmd = cmd
           break
-    
-    if field._name == 'Ref'
-      {pkeyName} = field
+
+    if dataField._name == 'Ref'
+      {pkeyName} = dataField
       if cid = val.cid # If the doc we're linking to is new
         dependencyCmd = cmdSet.findCommandByCid cid
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
-        cmdSet.pipe dependencyCmd, cmd, (extraAttrs) =>
-          if matchingCmd.method == 'insert'
-            matchingCmd.val[path] = extraAttrs[pkeyName]
-          else if matchingCmd.method == 'update'
-            matchingCmd.val.$set[path] = pkeyVal
-          else
-            throw new Error "command method  #{matchingCmd.method} is not supported in this context"
+        cmdSet.pipe dependencyCmd, cmd, (extraAttrs) ->
+          switch mathcingCmd.method
+            when 'insert'
+              matchingCmd.val[path] = extraAttrs[pkeyName]
+            when 'update'
+              matchingCmd.val.$set[path] = pkeyVal
+            else
+              throw new Error "Command method #{matchingCmd.method} isn't supported in thsi context"
         return cmdSet
       if pkeyVal = val[pkeyName]
-        @set cmdSet, ns, field.type, conds, path, pkeyVal, ver
+        @set cmdSet, dataField, conds, path, pkeyVal
         return cmdSet
 
-    if field._name == 'Object' && cid = val.cid
+    if dataField._name == 'Object' && cid = val.cid
       pending = cmdSet.pendingByCid[cid] ||= []
       pending.push Array::slice.call arguments, 1
       return cmdSet
@@ -137,7 +129,7 @@ MongoSource = module.exports = DataSource.extend
       if cid = conds.__cid__
         if pending = cmdSet.pendingByCid[cid]
           for [pdoc, pns, pfield, pconds, ppath, pval, pver] in pending
-            @set cmdSet, pdoc, pns, field, pconds, ppath + '.' + path, val, pver
+            @set cmdSet, pdoc, dataField, pconds, ppath + '.' + path, val, pver
           # We want to keep around pending for any future ops that are grounded in cid
           # , so we don't delete cmdSet.pendingByCid[cid]
           return cmdSet
@@ -170,6 +162,7 @@ MongoSource = module.exports = DataSource.extend
         throw new Error 'Implement for other incoming method ' + matchingCmd.method
 
     return cmdSet
+
 
   del: (cmdSet, doc, ns, field, conds, path) ->
     cmds = cmdSet.findCommands ns, conds
@@ -265,7 +258,3 @@ MongoSource = module.exports = DataSource.extend
 
   pop: (ns, field, cmd, path, values..., ver) ->
     throw new Error 'Unimplemented'
-
-operation =
-  splat: ([doc, namespace, conds, method, args...]) ->
-    {doc, ns: namespace, conds, method, path: args[0], args}

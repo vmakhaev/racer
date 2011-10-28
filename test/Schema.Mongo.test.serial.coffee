@@ -171,7 +171,7 @@ module.exports =
       _id.length.should.equal 24
       done()
 
-  'should be able to retrieve a document after creating it': (done) ->
+  'should be able to retrieve a document after creating it @single': (done) ->
     User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.findOne
@@ -463,6 +463,22 @@ module.exports =
             status: 'why so serious?'
             author: authorId
           done()
+    , oplog
+
+  '''should be able to properly retrieve an ObjectId Ref as the
+  configured local schema relation: Schema''': (done) ->
+    oplog = []
+    Tweet.create
+      status: 'why so serious?',
+      author: {name: 'the clown'}
+    , (err, tweet) ->
+      should.equal null, err
+      tweetId = tweet.get '_id'
+      Tweet.findOne _id: tweetId, (err, foundTweet) ->
+        should.equal null, err
+        author = foundTweet.get 'author'
+        author.should.be.an.instanceof User
+        author.get('name').should.equal 'the clown'
     , oplog
 
   # Command building
