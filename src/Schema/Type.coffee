@@ -1,55 +1,3 @@
-# We could have done style of:
-#     NumberType = Type.extend 'Number,
-#       cast: (val) ->
-#
-# where NumberType has constructor signature:
-#     function NumberType (path, opts) { /**/ }
-#
-# but then we must deal with issues around guaranteeing
-# for
-#     num = new NumberType
-#     num.should.be.an.instanceof Number
-#     typeof(num).should.equal 'number'
-#
-# The same is even more important for Array type derivates,
-# since "sub-classing" Arrays in JS is full of anomalies.
-#
-# # Casting
-#
-# We will want to use casting on both field assignment & mutation
-# and query parameters.
-#
-# # Who calls the field methods?
-#     # For numbers and "primitive types
-#     user.get('age').increment(2)
-#     # vs
-#     user.increment('age', 2)
-#
-#     # For complex types like Schemas that have their own methods
-#     user.get('group').set('name', 'nodejs')
-#
-#     # For arrays, use native Array
-#     friends = user.get('friends')
-#     friends.length
-#     friends[i]
-#     friends.push
-#
-#     # For sets
-#     friends = user.get('friends')
-#     friends.add(new User)
-#     friends.remove(_id: 5)
-#
-# This implies the need for 2 types:
-# 1. Types that add methods to Schema to interact with that type.
-#    Schema::[typeMethod] ||= (fieldName, args...) ->
-#      currFieldVal = @_doc[fieldName]
-#      @_doc[fieldName] = @fields[fieldName][typeMethod] currFieldVal, args...
-#
-#      # @fields[fieldName][typeMethod].apply currFieldVal, args...
-#      # @fields[fieldName][typeMethod].apply @_doc, args...
-#      
-# 2. Types whose methods are used directly via the type object.
-#
 # # Fields/Attributes vs Types
 # Types are indexed by string name via Type or Schema. They encapsulate code
 # for basic casting and validation.
@@ -71,8 +19,8 @@
 Field = require './Field'
 
 Type = module.exports = (name, config) ->
-  @setups = []
-  @validators = []
+  @_setups = []
+  @_validators = []
   @_name = name
 
   for method, arg of config
@@ -86,15 +34,14 @@ Type = module.exports = (name, config) ->
   return
 
 Type:: =
-  # TODO Rename this
   createField: -> new Field @
   assignAsTypeToSchemaField: (schema, fieldName) ->
-    setups = @setups
+    setups = @_setups
     setup.call schema, fieldName for setup in setups
     schema[fieldName] = @
 
   setup: (fn) ->
-    @setups.push fn
+    @_setups.push fn
     return @
 
   caster: (caster) ->
@@ -102,20 +49,17 @@ Type:: =
     return @
 
   validator: (validator) ->
-    @validators.push validator
+    @_validators.push validator
     return @
 
   extend: (@parentType) ->
 
+  # TODO Add in async validations
   validate: (val) ->
-    errors = []
-    for fn in @validators
-      result = fn val
-      continue if true == result
-      errors.push result
-
+    validators = @_validators
+    errors = (err for fn in validators when (err = fn val) != true)
     if @parentType
-      result = @parentType.validate val
-      errors = errors.concat result unless true == result
-
+      parentErrors = @parentType.validate val
+      unless true == parentErrors
+        errors = errors.concat parentErrors
     return if errors.length then errors else true

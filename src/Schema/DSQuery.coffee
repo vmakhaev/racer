@@ -1,6 +1,9 @@
+Promise = require '../Promise'
+
 DSQuery = module.exports = (@conds, @queryMethod) ->
   @includeFields = {}
   @logicalFields = {}
+  @fieldPromises = {}
   return
 
 DSQuery.condsRelTo = (dataField, LogicalSkema, conds) ->
@@ -17,13 +20,29 @@ DSQuery:: =
     unless Object.keys(logicalFields).length
       @fire()
 
-  add: (dataField) ->
+  add: (dataField, dataFieldProm) ->
     @source ||= dataField.source
-    @includeFields[dataField.path] = dataField
+    fieldPath = dataField.path
+    @includeFields[fieldPath] = dataField
+    @fieldPromises[fieldPath] = dataFieldProm
     dataFields = @logicalFields[dataField.logicalField.path] ||= []
     dataFields.push dataField
 
   fire: ->
-    fields = (field for _, field of @includeFields)
-    if fields.length
-      @source[@queryMethod] fields[0].rootNs, @conds, fields
+    fields = @includeFields
+    anyFields = false
+    for k of fields
+      anyFields = true
+      {ns} = fields[k]
+      break
+    fieldPromises = @fieldPromises
+    if anyFields
+      return @source[@queryMethod] ns, @conds, fields, (err, json) ->
+        for path, promise of fieldPromises
+          promise.resolve err, json[path]
+
+    # TODO Consider the following code. Remove or complete?
+    throw new Error 'Unimplemented'
+    prom = new Promise
+    prom.fulfill null
+    return prom

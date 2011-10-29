@@ -1,8 +1,10 @@
 Schema = require '../index'
 {merge} = require '../../util'
+DataField = require '../DataField'
 
 baseType =
-  createField: -> return Object.create @
+  createField: (opts) -> new DataField @, opts
+
   extend: (name, conf) ->
     extType = Object.create @
     extType._name = name
@@ -16,7 +18,7 @@ exports.ObjectId = baseType.extend 'ObjectId',
     return @fromString val
 
   uncast: (oid) ->
-    return oid.toString()
+    return oid.toHexString()
 
   defaultTo: -> new NativeObjectId
 
@@ -39,11 +41,6 @@ exports.Array = baseType.extend 'Array',
       else
         member
 
-  createField: ({memberType}) ->
-    field = Object.create @
-    field.memberType = memberType
-    return field
-
 # Object means an embedded document or the member of an embedded 
 # array if this is a recursive inferType call
 # TODO Can we remove exports.Object type?
@@ -57,11 +54,9 @@ exports.Ref = baseType.extend 'Ref',
     return @pkeyType.cast val
 
   createField: ({pkeyType, pkeyName, source}) ->
-    field = Object.create @
-    field.pkeyType = pkeyType
-    field.pkeyName = pkeyName
-    field.source = source
+    field = new DataField {pkeyType, pkeyName, source}
+    field.deref = (pkeyVal, callback) ->
+      conds = {}
+      conds[pkeyName] = pkeyVal
+      @source.findOne ns, conds, fields, callback
     return field
-
-  deref: (pkeyVal, callback) ->
-    @source.findOne 

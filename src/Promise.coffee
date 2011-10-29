@@ -7,8 +7,9 @@ Promise = module.exports = (callback) ->
 
 Promise:: =
   fulfill: (args...) ->
-    if @value isnt undefined
+    if @fulfilled
       throw new Error 'Promise has already been fulfilled'
+    @fulfilled = true
     if args.length == 1
       @value = args[0]
     else
@@ -27,11 +28,11 @@ Promise:: =
 
   resolve: (err, val) ->
     return @error err if err
-    return @fulfill val if val
+    return @fulfill val
     @
 
   on: (callback, scope) ->
-    return callback.call scope, @value unless @value is undefined
+    return callback.call scope, @value if @fulfilled
     @callbacks.push [callback, scope]
     @
 
@@ -42,8 +43,8 @@ Promise:: =
 
   bothback: (callback, scope) ->
     @errback callback, scope
-    @callback (val) ->
-      callback.call @, null, val
+    @callback (vals...) ->
+      callback.call @, null, vals...
     , scope
 
   onClearValue: (callback, scope) ->
@@ -62,8 +63,12 @@ Promise::callback = Promise::on
 Promise.parallel = (promises...) ->
   compositePromise = new Promise
   dependencies = promises.length
-  for promise in promises
-    promise.callback -> --dependencies || compositePromise.fulfill(true)
+  parallelVals = []
+  for promise, i in promises
+    do (i) ->
+      promise.callback (val) ->
+        parallelVals[i] = [val]
+        --dependencies || compositePromise.fulfill parallelVals...
     promise.onClearValue -> compositePromise.clearValue()
   return compositePromise
 
