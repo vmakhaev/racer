@@ -1,9 +1,9 @@
 # TODO Re-name @_doc and @fields for less confusion
-Type = require './Type'
 Promise = require '../Promise'
 {EventEmitter} = require 'events'
 {merge} = require '../util'
 FlowBuilder = require './FlowBuilder'
+CommandSet = require './CommandSet'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
@@ -39,18 +39,20 @@ Schema.extend = (name, ns, config) ->
         # TODO Lazy casting later?
         field = SubClass.fields[attrName]
 
-        # Cast defined fields; ad hoc fields skip this
-        if field
+        # 1st conditional term: Cast defined fields; ad hoc fields skip this
+        # 2nd conditional term: Don't cast undefineds
+        if field && attrVal
           attrVal = field.cast attrVal, if @isNew then @oplog else null
         if @isNew
           @set attrName, attrVal
         else
           @_assignAttrs attrName, attrVal
-    if @isNew
-      # TODO Move source defaults out of constructor?
-      dataSchemas = @dataSchemas
-      for dataSchema in dataSchemas
-        dataSchema.addDefaults @
+    # TODO Add the following block back
+#     if @isNew
+#       # TODO Move source defaults out of constructor?
+#       dataSchemas = SubClass.dataSchemas
+#       for dataSchema in dataSchemas
+#         dataSchema.addDefaults @
     return
 
   SubClass:: = proto = new ParentClass()
@@ -80,8 +82,10 @@ Schema.extend = (name, ns, config) ->
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
-    field = Schema.inferType descriptor, fieldName
-    field.sources = []
+    field = Schema.createFieldFrom descriptor, fieldName
+    field.sources = [] # TODO Are we using field.sources?
+    field.path = fieldName
+    field.schema = SubClass
     SubClass.field fieldName, field
 
   SubClass.cast = (val, oplog) ->
@@ -134,7 +138,7 @@ Schema.applyOps = (oplog, callback) ->
     {doc, ns, conds, method, path, args} = operation.splat op
     # TODO Handle nested paths
     LogicalSkema = Schema._schemas[ns]
-    {dataFields, sources} = logicalField = LogicalSkema.fields[path]
+    {dataFields} = logicalField = LogicalSkema.fields[path]
 
     # TODO How does this fit in with STM? We need a rollback mechanism
     for dataField in dataFields
@@ -147,16 +151,15 @@ Schema.applyOps = (oplog, callback) ->
 
   return cmdSet.fire (err, extraAttrs) ->
     return callback err if err
-    if extraAttrs
-      # `extraAttrs` are attributes that were not present in the oplog
-      # when sent to the source, but that were then created by the source.
-      # These new extraAttr need to be written back to the Schema document
-      # -- e.g., auto-incrementing primary key in MySQL
-      for attrName, attrVal of extraAttrs
-        doc._doc[attrName] = attrVal
+    # `extraAttrs` are attributes that were not present in the oplog
+    # when sent to the source, but that were then created by the source.
+    # These new extraAttr need to be written back to the Schema document
+    # -- e.g., auto-incrementing primary key in MySQL
+    doc._doc[attrName] = attrVal for attrName, attrVal of extraAttrs if extraAttrs
     return callback null
 
 Schema.static
+  # TODO Do we even need dataSchemas as a static here?
   dataSchemas: []
   # We use this to define a "data source schema" and link it to
   # this "logical Schema".
@@ -269,7 +272,7 @@ merge Schema::,
         @_assignAttrs k, v, nextObj
       return obj[name]
 
-    throw new Error "Either #{name} isn't a field of #{_name}, or #{val} is not an Object"
+    throw new Error "Either `#{name}` isn't a field of `#{_name}`, or `#{val}` is not an Object"
 
   atomic: ->
     obj = Object.create @
@@ -389,6 +392,7 @@ actLikeTypeMixin =
     setups: []
     validators: []
 
+Type = require './Type'
 for methodName, method of Type::
   continue if methodName == 'extend'
   actLikeTypeMixin.static[methodName] = method
@@ -414,36 +418,40 @@ Schema.type = (typeName, config) ->
   return type
 Schema._types = {}
 
-# Factory method returning new Field instances
-# generated from factory create new Type instances
-Schema.inferType = (descriptor, fieldName) ->
+Schema.createFieldFrom = (descriptor, fieldName) ->
   if descriptor.constructor == Object
     if '$type' of descriptor
       # e.g.,
       # username:
       #   $type: String
       #   validator: fn
-      field = Schema.inferType descriptor.$type
+      type = Schema.inferType descriptor.$type
       delete descriptor.$type
+      field = type.createField()
       for method, arg of descriptor
         if Array.isArray arg
           field[method] arg...
         else
           field[method] arg
-        return field
+      return field
+  type = @inferType descriptor, fieldName
+  return type.createField()
 
+# Factory method returning new Field instances
+# generated from factory create new Type instances
+Schema.inferType = (descriptor, fieldName) ->
   if Array.isArray descriptor
     arrayType = @type 'Array'
     memberType = descriptor[0]
     concreteArrayType = Object.create arrayType
     concreteArrayType.memberType = @inferType memberType
-    return concreteArrayType.createField()
+    return concreteArrayType
   if descriptor == Number
-    return@type('Number').createField()
+    return @type('Number')
   if descriptor == Boolean
-    return @type('Boolean').createField()
+    return @type('Boolean')
   if descriptor == String
-    return @type('String').createField()
+    return @type('String')
 
   # e.g., descriptor = schema('User')
   if descriptor instanceof Promise
@@ -451,12 +459,8 @@ Schema.inferType = (descriptor, fieldName) ->
       promise.fulfill schema, fieldName
     return descriptor
 
-  # If we're a constructor
-  if 'function' == typeof descriptor
-    return descriptor.createField()
-
-  if descriptor instanceof Type
-    return descriptor.createField()
+  return descriptor if 'function' == typeof descriptor || # If we're a Schema ctor
+                       descriptor instanceof Type
 
   throw new Error 'Unsupported descriptor ' + descriptor
 

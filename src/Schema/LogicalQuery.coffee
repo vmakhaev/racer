@@ -42,12 +42,13 @@ LogicalQuery:: =
     for k, v of conds
       field = fields[k]
       conds[k] = field.cast v if field.cast
+    return conds
 
   # Takes the state of the current query, and fires off the query to all
   # data sources; then, collects and re-assembles the data into the
   # logical document and passes it to callback(err, doc)
   fire: (fireCallback) ->
-    @castConditions() # Logical schema casting of the query condition vals
+    conds = @castConditions() # Logical schema casting of the query condition vals
     RootLogicalSkema = @schema
     # Conditions and fields to select will determine the async flow path
     # through (data source, namespace) nodes. Conditions may be for fields
@@ -63,13 +64,13 @@ LogicalQuery:: =
       # TODO Add this kind of logic to @castConditions
       logicalFields = (RootLogicalSkema.lookupField path for path in select)
     else
-      logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields where field)
+      logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
     lFieldsPromises = []
     phaseForLField = {} # Maps logical field hashes -> curr index in logical field's readFlow
     qDispatcher = new DSQueryDispatcher @queryMethod
     for [logicalField, ownerPathRelToRoot] in logicalFields
-      qDispatcher.registerLogicalField logicalField
+      qDispatcher.registerLogicalField logicalField, conds
     firePromise = (new Promise).bothback fireCallback
     qDispatcher.fire (err, lFieldVals...) ->
       # TODO create a version of Promise.parallel that returns an Object as val in (err, val)
@@ -77,7 +78,10 @@ LogicalQuery:: =
       attrs = {}
       for [lFieldVal], i in lFieldVals
         [logicalField, ownerPathRelToRoot] = logicalFields[i]
-        attrs[ownerPathRelToRoot + '.' + logicalField.path] = lFieldVal
+        attrPath = ownerPathRelToRoot
+        attrPath += '.' if attrPath
+        attrPath += logicalField.path
+        attrs[attrPath] = lFieldVal
       result = new RootLogicalSkema attrs, false
       firePromise.resolve null, result
 

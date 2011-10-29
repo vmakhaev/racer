@@ -1,6 +1,7 @@
 Promise = require '../Promise'
 
-Command = module.exports = (@ns, @conds, @doc) ->
+# TODO Should we replace @source, @ns with @dataSkema ?
+Command = module.exports = (@source, @ns, @conds, @doc) ->
   @cid = cid if cid = @conds?.__cid__
   @method
   @args
@@ -30,7 +31,8 @@ Command:: =
     return @
 
   # Dispatches the command
-  fire: (source, callback) ->
+  fire: (callback) ->
+    source = @source
     @compile()
     args = @args
     # e.g., adapter.update 'users', {_id: id}, {$set: {name: 'Brian', age: '26'}}, {upsert: true, safe: true}, callback
@@ -41,8 +43,8 @@ Command:: =
         dataSchema = source.dataSchemas[@ns]
         for attrName, attrVal of extraAttrs
           dataField = dataSchema[attrName]
-          if dataField.uncast
-            attrVal = dataField.uncast attrVal
+          if dataField.type?.uncast
+            attrVal = dataField.type.uncast attrVal
           doc._doc[attrName] = attrVal
 
       callback err, extraAttrs

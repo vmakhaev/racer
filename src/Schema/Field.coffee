@@ -1,3 +1,5 @@
+Schema = require './index'
+
 # Encapsulates the configuration of a field in a logical schema.
 # A field is a declared attribute on a custom Schema that is associated with a type
 # and configuration specific to the association of the type to this attribute -- e.g.,
@@ -8,10 +10,17 @@
 # @param {Schema|Type} the type of this field
 Field = module.exports = (@type) ->
   @validators = []
+  @dataFields = []
+  @isRelationship = @type?.prototype instanceof Schema || (@type.memberType?.prototype instanceof Schema)
   return
 
 Field:: =
-  cast: (val, oplog) -> if @type.cast then @type.cast val, oplog else val
+  schema: null
+  path: null
+
+  cast: (val, oplog) ->
+    return val unless val?
+    if @type.cast then @type.cast val, oplog else val
 
   # Defines a validator fn
   validator: (fn) ->
@@ -35,15 +44,12 @@ Field:: =
   genDataFieldFlow: ->
     return dataFieldFlow if dataFieldFlow = @dataFieldFlow
     dataFieldFlow = []
+    dataFields = @dataFields
     if readFlow = @readFlow || @schema.readFlow
-      dataFields = @dataFields
       for [sources, parallelCallback] in readFlow
-        matchingDFields = (dField for dField in dataFields where -1 != sources.indexOf dField.source)
+        matchingDFields = (dField for dField in dataFields when -1 != sources.indexOf dField.source)
         dataFieldFlow.push [matchingDFields, parallelCallback]
     else
-      console.warn '''Source lookup order not explicitly defined for this 
-        logical field #{logicalField.path} or its logical schema i
-        {LogicalSkema._name}. Falling back to parallel fetching of #{logicalField.path}'s
-        dataFields'''
-      dataFieldFlow.push [matchingDFields]
+      console.warn "Source lookup order not explicitly defined for this logical field `#{@path}` or its logical schema `#{@schema._name}`. Falling back to parallel fetching of `#{@path}` dataFields"
+      dataFieldFlow.push [dataFields]
     return @dataFieldFlow = dataFieldFlow

@@ -25,7 +25,7 @@ MongoSource = module.exports = DataSource.extend
     if descriptor.constructor == Object
       if '$type' of descriptor
         # If we have { $type: SomeType, ... } as our Data Source Schema attribute rvalue
-        type = @inferType descriptor.$type
+        type = descriptor.$type
         delete descriptor.$type
         for flag, arg of descriptor
           continue if flag == '$pkey'
@@ -38,14 +38,14 @@ MongoSource = module.exports = DataSource.extend
             type[flag] = arg
           else
             throw new Error "Unsupported type descriptor flag #{flag}"
-        return type
-      if '$dataField' of descriptor
-        {source, fieldName, type: ftype} = descriptor.$dataField
+        return type.createField source: @
+      if '$foreignField' of descriptor
+        {source, path, type: ftype} = descriptor.$foreignField
         if ftype.$pkey # If this field is a ref
           # source.inferType 
           return source.types.Ref.createField
             pkeyType: ftype
-            pkeyName: fieldName
+            pkeyName: path
             source: source
         # if array ref
         # if inverse ref
@@ -53,14 +53,16 @@ MongoSource = module.exports = DataSource.extend
 
     if Array.isArray descriptor
       arrayType = types['Array']
-      return arrayType.createField
-        memberType: @inferType descriptor[0]
+      concreteArrayType = Object.create arrayType
+      concreteArrayType.memberType = @inferType descriptor[0]
+      return concreteArrayType.createField
+        source: @
 
     if type = types[descriptor.name || descriptor._name]
-      return type
+      return type.createField source: @
 
     # else String, Number, Object => Take things as they are
-    return {}
+    return source: @
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
     parts = flattenedPath.split '.'
@@ -83,29 +85,22 @@ MongoSource = module.exports = DataSource.extend
   # @param {Number} ver is the oplog op's ver
   set: (cmdSet, doc, dataField, conds, path, val) ->
     {ns} = dataField
-    cmds = cmdSet.findCommands @_name, ns, conds
-
-    # Would be mice to have this inside something like CommandSet::matchingCmd,
-    # but the logic for this would be source dependent. Hence, we keep that logic here.
-    # As an alternative, we could subclass Command as MongoCommand and place the logic inside
-    # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
-    for cmd in cmds
+    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
       {method: cmethod, val: cval} = cmd
-      if cmethod == 'insert'
-        matchingCmd = cmd
-        break
-      else if cmethod == 'update'
-        $atomics = Object.keys cval
-        if $atomics.length > 1
-          throw new Error 'Should not have > 1 $atomic per command'
-        if '$set' of cval
-          matchingCmd = cmd
-          break
+      switch cmethod
+        when 'insert' then return true
+        when 'update'
+          $atomics = Object.keys cval
+          if $atomics.length > 1
+            throw new Error 'Should not have > 1 $atomic per command'
+          if '$set' of cval
+            return true
+      return false
 
     if dataField._name == 'Ref'
       {pkeyName} = dataField
       if cid = val.cid # If the doc we're linking to is new
-        dependencyCmd = cmdSet.findCommandByCid cid
+        dependencyCmd = cmdSet.commandsByCid[cid]
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
         cmdSet.pipe dependencyCmd, cmd, (extraAttrs) ->
           switch mathcingCmd.method
@@ -133,9 +128,7 @@ MongoSource = module.exports = DataSource.extend
           # We want to keep around pending for any future ops that are grounded in cid
           # , so we don't delete cmdSet.pendingByCid[cid]
           return cmdSet
-
-
-      matchingCmd = new Command ns, conds, doc
+      matchingCmd = new Command @, ns, conds, doc
       if conds.__cid__
         matchingCmd.method = 'insert'
         if -1 == path.indexOf '.'
@@ -146,18 +139,17 @@ MongoSource = module.exports = DataSource.extend
         matchingCmd.method = 'update'
         (delta = {})[path] = val
         matchingCmd.val = { $set: delta}
-
       cmdSet.index matchingCmd
       cmdSet.position matchingCmd
       return cmdSet
 
-    val = field.cast val if field.cast
+    val = dataField.cast val if dataField.cast
 
     switch matchingCmd.method
       when 'update'
-        cmd.val.$set[path] = val
+        matchingCmd.val.$set[path] = val
       when 'insert'
-        @_assignToUnflattened cmd.val, path, val
+        @_assignToUnflattened matchingCmd.val, path, val
       else
         throw new Error 'Implement for other incoming method ' + matchingCmd.method
 
@@ -178,7 +170,7 @@ MongoSource = module.exports = DataSource.extend
           break
 
     unless matchingCmd
-      matchingCmd = new Command ns, conds, doc
+      matchingCmd = new Command @, ns, conds, doc
       matchingCmd.method = 'update'
       (unset = {})[path] = 1
       matchingCmd.val = $unset: unset
@@ -219,7 +211,7 @@ MongoSource = module.exports = DataSource.extend
           break
 
     unless matchingCmd
-      matchingCmd = new Command ns, conds, doc
+      matchingCmd = new Command @, ns, conds, doc
       if conds.__cid__
         matchingCmd.method = 'insert'
         (matchingCmd.val = {})[path] = values
