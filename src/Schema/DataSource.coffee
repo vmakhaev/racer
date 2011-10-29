@@ -54,6 +54,14 @@ DataSource:: =
     for fieldName, descriptor of conf
       # Add field to the data schema
       dataField = fields[fieldName] = @inferType descriptor
+      dataField.path = fieldName
+      dataField.ns = ns
+      # TODO Modify this when we implement non-mirroring field names
+      dataField.logicalField = LogicalSkema.fields[fieldName]
+
+      # TODO This must change when there is not a 1-1 mapping between
+      #      logical field names and the data field names they correspond to
+      LogicalSkema.fields[fieldName].dataFields.push dataField
 
       # Add a shortcut
       # `shortcut` is for use in rvalues of other data source schemas
@@ -63,7 +71,6 @@ DataSource:: =
       #       someAttr: mysql.Skema.id
       #     });
       shortcut[fieldName] =
-        # TODO grep for $dataField and replace it
         $foreignField: dataField # = {source: @, name: fieldName}
 
     return fields
@@ -75,7 +82,7 @@ DataSource:: =
   #
   # @param {Schema} document
   addDefaults: (document) ->
-    fields = @fields
+    fields = @dataSchemas[document.constructor.ns]
     for fieldName, {defaultTo} of fields
       continue if fieldName == '_id' # TODO Replace _id w/generic pkey
       continue if defaultTo is undefined
@@ -89,7 +96,7 @@ DataSource:: =
   findOne: (ns, conditions, fields, callback) ->
     sourceProm = new Promise
     sourceProm.bothback callback if callback
-    conditions = @_castObj conditions
+    conditions = @_castObj @dataSchemas[ns], conditions
 
       # 2. Determine if we should generate any other queries
       #    e.g., for queries that include a Ref
@@ -124,8 +131,8 @@ DataSource:: =
   find: (ns, conditions, fields, callback) ->
     sourceProm = new Promise
     sourceProm.bothback callback if callback
-    conditions = @_castObj conditions
-    fields = @fields
+    conditions = @_castObj @dataSchemas[ns], conditions
+    fields = @dataSchemas[ns]
     self = this
     @adapter.find ns, conditions, {}, (err, array) ->
       return sourceProm.resolve err if err
@@ -133,14 +140,13 @@ DataSource:: =
       # TODO Should we have a separate Data Source Schema document, distinguishable from the Logical Schema?
       arr = []
       for json in array
-        arr.push self._castObj json
+        arr.push self._castObj dataSchema, json
       return sourceProm.resolve null, arr
     return sourceProm
 
-  _castObj: (obj) ->
-    fields = @fields
+  _castObj: (dataSchema, obj) ->
     for path, val of obj
-      field = fields[path]
+      field = dataSchema[path]
       obj[path] = field.cast val if field.cast
     return obj
 

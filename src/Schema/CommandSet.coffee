@@ -45,13 +45,16 @@ CommandSet:: =
     # Add cmd to command set if not already part of it
     @index cmdA
 
-  findCommandByCid: (cid) ->
-    @commandsByCid[cid]
-
-  findCommands: (ns, conds) ->
+    # As an alternative to isMatchPredicate, we could subclass Command as MongoCommand and place the logic inside
+    # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
+  findCommand: (ns, conds, isMatchPredicate) ->
     cmds = @commands[ns]
-    return [] unless cmds
-    (cmd for cmd in cmds when if conds isnt undefined and cmd.conds isnt undefined then deepEqual conds, cmd.conds else conds == cmd.conds)
+    return unless cmds
+    for cmd in cmds
+      cmdConds = cmd.conds
+      continue if (conds == undefined || cmdConds == undefined) && conds != cmdConds
+      continue unless deepEqual conds, cmdConds
+      return cmd if isMatchPredicate cmd
 
   index: (command) ->
     {ns, conds} = command
@@ -69,25 +72,25 @@ CommandSet:: =
   position: (command) ->
     # Position within concurrent flow control data structure
     unless @root
-      command.pos = @root = { cmds: [[command, null]] }
+      @root = { cmds: [[command, null]] }
     else
       @root.cmds.push [command, null]
-      command.pos = @root
+    command.pos = @root
 
-  _setupPromises: (source, callback, currPos = @root, currProm = new Promise) ->
+  _setupPromises: (callback, currPos = @root, currProm = new Promise) ->
     cmds = currPos.cmds
     if cmds.length == 1
       [cmd, cb] = cmds[0]
       if currPos.next
         nextProm = new Promise
         currProm.callback ->
-          cmd.fire source, (err, extraAttrs) ->
+          cmd.fire (err, extraAttrs) ->
             return callback err if err
             cb extraAttrs if cb
             nextProm.resolve err, extraAttrs
       else
         currProm.callback ->
-          cmd.fire source, (err, extraAttrs) ->
+          cmd.fire (err, extraAttrs) ->
             return callback err if err
             cb extraAttrs if cb
             callback null
@@ -95,10 +98,10 @@ CommandSet:: =
       throw new Error 'Unimplemented'
 
     if currPos.next
-      @_setupPromises source, callback, currPos.next, nextProm
+      @_setupPromises callback, currPos.next, nextProm
     
     return currProm
 
-  fire: (source, callback) ->
-    rootProm = @_setupPromises source, callback
+  fire: (callback) ->
+    rootProm = @_setupPromises callback
     rootProm.fulfill()
