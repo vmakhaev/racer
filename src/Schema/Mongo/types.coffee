@@ -60,3 +60,6 @@ exports.Ref = baseType.extend 'Ref',
       conds[pkeyName] = pkeyVal
       @source.findOne ns, conds, fields, callback
     return field
+
+for type in ['String', 'Number']
+  exports[type] = baseType.extend type, {}

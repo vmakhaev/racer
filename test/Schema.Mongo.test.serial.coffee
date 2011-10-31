@@ -25,7 +25,7 @@ module.exports =
       _id: String
       name: String
 
-    Dog.source mongo, 'dogs',
+    Dog.createDataSchema mongo, false,
       _id: ObjectId
       name: String
 
@@ -47,14 +47,15 @@ module.exports =
     #  group: schema('Group')
 
     # mongo.connect 'mongodb://localhost/racer_test'
-    #User.source mongo, 'los_users',
-    User.source mongo, 'users',
+    #User.createDataSchema mongo, 'los_users',
+    User.createDataSchema mongo,
       _id: mongo.pkey ObjectId
       name: String
       age: Number
       tags: [String]
       keywords: [String]
-      pet: Object
+      pet: mongo.Dog
+      # pet: { _id: ObjectId, name: String}
       pets: [Object]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
@@ -72,11 +73,10 @@ module.exports =
       status: String
       author: User
 
-
-    Tweet.source mongo, 'tweets',
-      _id: ObjectId
+    Tweet.createDataSchema mongo, 'tweets',
+      _id: mongo.pkey ObjectId
       status: String
-      author: mongo.User._id
+      author: mongo.User.field '_id'
       # author: mongo.pointsTo User, '_id'
 
     Group = Schema.extend 'Group', 'groups',
@@ -85,8 +85,8 @@ module.exports =
     #  users: [User]
 
 
-    Group.source mongo, 'groups',
-      _id: ObjectId
+    Group.createDataSchema mongo, 'groups',
+      _id: mongo.pkey ObjectId
       name: String
     #,
     #  users: [User.groupId]
@@ -109,7 +109,7 @@ module.exports =
     #   friendA: friendYId
     #   friendB: friendXId
     # 
-    # User.source mongo, 'los_users',
+    # User.createDataSchema mongo, 'los_users',
     #   _id: Mongo.pkey
     #   # ...
     #   friendIds: [User._id]
@@ -118,32 +118,32 @@ module.exports =
     #   friends: friendIds
     # 
     # # Scen A - array of refs
-    # Blog.source mongo,
+    # Blog.createDataSchema mongo,
     #   _id: ObjectId
     #   authorIds: [User._id]
     # ,
     #   authors: 'authorIds'
     # 
-    # User.source mongo,
+    # User.createDataSchema mongo,
     #   _id: ObjectId
     # ,
     #   blog: pointedToBy(Blog.authors)
     # 
     # # Scen B - ref
-    # Blog.source mongo,
+    # Blog.createDataSchema mongo,
     #   _id: ObjectId
-    # User.source mongo,
+    # User.createDataSchema mongo,
     #   _id: ObjectId
     #   blogId: Blog._id
     # ,
     #   blog: 'blogId'
     # 
     # # Scen C - Inverse ref
-    # Blog.source mongo,
+    # Blog.createDataSchema mongo,
     #   _id: ObjectId
     #   authorId: schema('User')._id # (*)
     # 
-    # User.source mongo,
+    # User.createDataSchema mongo,
     #   _id: ObjectId
     # ,
     #   blog: Blog.authorId
@@ -171,7 +171,7 @@ module.exports =
       _id.length.should.equal 24
       done()
 
-  'should be able to retrieve a document after creating it @single': (done) ->
+  'should be able to retrieve a document after creating it': (done) ->
     User.create name: 'Brian', age: 26, (err, createdUser) ->
       should.equal null, err
       User.findOne
@@ -287,7 +287,7 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal''': (done) ->
+  and set as an object literal @single''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
