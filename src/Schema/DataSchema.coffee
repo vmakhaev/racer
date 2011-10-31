@@ -63,7 +63,6 @@ DataSchema:: =
   findOne: (conds, fields, callback) ->
     sourceProm = new Promise
     sourceProm.bothback callback if callback
-    # TODO ns is not always going to match up with logical ns
     conds = @_castObj conds
 
       # 2. Determine if we should generate any other queries
@@ -75,16 +74,19 @@ DataSchema:: =
       return sourceProm.resolve err if err
       return sourceProm.resolve null, null unless json
 
-      # TODO Should we have a separate Data Source Schema document, distinguishable from the Logical Schema?
       derefPromises = []
       # TODO Part of the following block is duplicated in DataSource::_castObj
       for path, val of json
         resField = fields[path]
         if resField.deref # Ducktyped @deref
-          adapterProm = resField.deref val, (err, dereffedJson) ->
-            # Cast using the referenced data source schema
-            json[path] = resField.cast dereffedJson
-          derefPromises.push adapterProm
+          do (path) ->
+            derefProm = resField.deref val, (err, dereffedJson) ->
+              # Uncast using the referenced data source schema
+  #            console.log dereffedJson
+  #            console.log resField
+  #            json[path] = resField.type.uncast dereffedJson if resField.type.uncast
+              json[path] = dereffedJson
+            derefPromises.push derefProm
         else
           json[path] = resField.cast val if resField.cast
       switch derefPromises.length
@@ -120,6 +122,13 @@ DataSchema:: =
 
   # When acting like a type
   createField: (opts) -> new DataField @, opts
+  uncast: (val) ->
+    fields = @fields
+    for path, v of val
+      field = fields[path]
+      if field.type.uncast
+        val[path] = field.type.uncast v
+    return val
 
   _castObj: (obj) ->
     fields = @fields

@@ -48,9 +48,11 @@ exports.Ref = baseType.extend 'Ref',
   createField: (opts) ->
     field = new DataField @, opts
     field.deref = (pkeyVal, callback) ->
+      {source, ns} = @type.pointsToField
       conds = {}
-      conds[pkeyName] = pkeyVal
-      @source.findOne ns, conds, fields, callback
+      conds[@type.pkeyName] = pkeyVal
+      # Change null to explicit fields
+      return source.dataSchemasWithNs[ns].findOne conds, null, callback
     return field
 
 for type in ['String', 'Number']
