@@ -442,7 +442,7 @@ module.exports =
 
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
-  ObjectId and (b) the object identified by that ObjectId @single''': (done) ->
+  ObjectId and (b) the object identified by that ObjectId''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
@@ -467,7 +467,7 @@ module.exports =
     , oplog
 
   '''should be able to properly retrieve an ObjectId Ref as the
-  configured local schema relation: Schema''': (done) ->
+  configured local schema relation: Schema @single''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
@@ -475,11 +475,12 @@ module.exports =
     , (err, tweet) ->
       should.equal null, err
       tweetId = tweet.get '_id'
-      Tweet.findOne _id: tweetId, (err, foundTweet) ->
+      Tweet.findOne _id: tweetId, {select: ['_id', 'status', 'author']}, (err, foundTweet) ->
         should.equal null, err
         author = foundTweet.get 'author'
         author.should.be.an.instanceof User
         author.get('name').should.equal 'the clown'
+        done()
     , oplog
 
   # Command building
