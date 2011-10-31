@@ -3,12 +3,12 @@ types = require './types'
 CommandSet = require '../CommandSet'
 Command = require '../Command'
 Schema = require '../index'
+DataSchema = require '../DataSchema'
 
 # Important roles are:
 # - Convert oplog to db queries
 # - Define special types specific to the data store (e.g., ObjectId)
 MongoSource = module.exports = DataSource.extend
-
   _name: 'Mongo'
 
   # The layer of abstraction that deals with db-specific commands
@@ -23,13 +23,14 @@ MongoSource = module.exports = DataSource.extend
   #     });
   inferType: (descriptor) ->
     if descriptor.constructor == Object
-      if '$type' of descriptor
+      if type = descriptor.$type
         # If we have { $type: SomeType, ... } as our Data Source Schema attribute rvalue
-        type = descriptor.$type
         delete descriptor.$type
         for flag, arg of descriptor
-          continue if flag == '$pkey'
-          if 'function' == typeof type[flag]
+          if flag == '$pkey'
+            type = Object.create type
+            type.isPkey = true
+          else if 'function' == typeof type[flag]
             if Array.isArray arg
               type[flag] arg...
             else
@@ -38,15 +39,14 @@ MongoSource = module.exports = DataSource.extend
             type[flag] = arg
           else
             throw new Error "Unsupported type descriptor flag #{flag}"
-        return type.createField source: @
-      if '$foreignField' of descriptor
-        {source, path, type: ftype} = descriptor.$foreignField
-        if ftype.$pkey # If this field is a ref
-          # source.inferType 
-          return source.types.Ref.createField
-            pkeyType: ftype
-            pkeyName: path
-            source: source
+        return type
+      if foreignDataField = descriptor.$pointsTo
+        {source, path, type: ftype} = foreignDataField
+        if ftype.isPkey # If this field is a ref
+          concreteRefType = Object.create source.types.Ref
+          concreteRefType.pkeyType = ftype
+          concreteRefType.pkeyName = path
+          return concreteRefType
         # if array ref
         # if inverse ref
         # if inverse array ref
@@ -55,14 +55,15 @@ MongoSource = module.exports = DataSource.extend
       arrayType = types['Array']
       concreteArrayType = Object.create arrayType
       concreteArrayType.memberType = @inferType descriptor[0]
-      return concreteArrayType.createField
-        source: @
+      return concreteArrayType
+
+    if descriptor instanceof DataSchema
+      return descriptor
 
     if type = types[descriptor.name || descriptor._name]
-      return type.createField source: @
+      return type
 
-    # else String, Number, Object => Take things as they are
-    return source: @
+    throw new Error 'Unsupported type'
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
     parts = flattenedPath.split '.'
@@ -76,13 +77,12 @@ MongoSource = module.exports = DataSource.extend
     return curr
 
   # TODO Better lang via MongoCommandBuilder.handle 'set', (...) -> ?
-  # @param {CommandSet} is the current command set that we are building
-  # @param {String} ns is the namespace
-  # @param {Object} field is the data source field
+  # @param {CommandSet} the current command set we're building
+  # @param {Schema} doc that generated the incoming op params
+  # @param {DataField} the data source field
   # @param {Object} conds is the oplog op's conds
   # @param {String} path is the oplog op's path
   # @param {Object} val is the oplog op's val
-  # @param {Number} ver is the oplog op's ver
   set: (cmdSet, doc, dataField, conds, path, val) ->
     {ns} = dataField
     matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
@@ -97,7 +97,7 @@ MongoSource = module.exports = DataSource.extend
             return true
       return false
 
-    if dataField._name == 'Ref'
+    if dataField.type._name == 'Ref'
       {pkeyName} = dataField
       if cid = val.cid # If the doc we're linking to is new
         dependencyCmd = cmdSet.commandsByCid[cid]
@@ -115,7 +115,7 @@ MongoSource = module.exports = DataSource.extend
         @set cmdSet, dataField, conds, path, pkeyVal
         return cmdSet
 
-    if dataField._name == 'Object' && cid = val.cid
+    if dataField.type._name == 'Object' && cid = val.cid
       pending = cmdSet.pendingByCid[cid] ||= []
       pending.push Array::slice.call arguments, 1
       return cmdSet
@@ -123,22 +123,23 @@ MongoSource = module.exports = DataSource.extend
     unless matchingCmd
       if cid = conds.__cid__
         if pending = cmdSet.pendingByCid[cid]
-          for [pdoc, pns, pfield, pconds, ppath, pval, pver] in pending
-            @set cmdSet, pdoc, dataField, pconds, ppath + '.' + path, val, pver
+          for [pdoc, pfield, pconds, ppath, pval] in pending
+            @set cmdSet, pdoc, dataField, pconds, ppath + '.' + path, val
           # We want to keep around pending for any future ops that are grounded in cid
           # , so we don't delete cmdSet.pendingByCid[cid]
           return cmdSet
       matchingCmd = new Command @, ns, conds, doc
+      matchingCmd.val = {}
       if conds.__cid__
         matchingCmd.method = 'insert'
         if -1 == path.indexOf '.'
-          (matchingCmd.val = {})[path] = val
+          matchingCmd.val[path] = val
         else
           @_assignToUnflattened matchingCmd.val, path, val
       else
         matchingCmd.method = 'update'
         (delta = {})[path] = val
-        matchingCmd.val = { $set: delta}
+        matchingCmd.val.$set = delta
       cmdSet.index matchingCmd
       cmdSet.position matchingCmd
       return cmdSet
@@ -187,28 +188,26 @@ MongoSource = module.exports = DataSource.extend
         throw new Error 'Unsupported'
     return cmdSet
 
-  push: (cmdSet, doc, ns, field, conds, path, values...) ->
-    values = field.cast values if field.cast
+  push: (cmdSet, doc, dataField, conds, path, values...) ->
+    {ns} = dataField
 
-    if field.memberType._name == 'Object' && values[0] instanceof Schema
-      @push cmdSet, doc, ns, field.memberType, conds, path, (val._doc for val in values)
+    values = dataField.cast values if dataField?.cast
+
+    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
+      {method: cmethod, val: cval} = cmd
+      switch cmethod
+        when 'insert' then return true
+        when 'update'
+          $atomics = Object.keys cmd.val
+          if $atomics.length > 1
+            throw new Error 'Should not have > 1 $atomic per command'
+          if pushParam = cval.$push || cval.$pushAll
+            return true if path of pushParam
+
+    if dataField.type.memberType._name == 'Object' && values[0] instanceof Schema
+      memberField = dataField.type.memberType.createField()
+      @push cmdSet, doc, ns, dataField.type.memberType, conds, path, (val._doc for val in values)
       return cmdSet
-
-    cmds = cmdSet.findCommands ns, conds
-
-    for cmd in cmds
-      cmethod = cmd.method
-      if cmethod == 'insert'
-        matchingCmd = cmd
-        break
-      else if cmethod == 'update'
-        $atomics = Object.keys cmd.val
-        if $atomics.length > 1
-          throw new Error 'Should not have > 1 $atomic per command'
-        if pushParam = cmd.val.$push || cmd.val.$pushAll
-          if path of pushParam
-            matchingCmd = cmd
-          break
 
     unless matchingCmd
       matchingCmd = new Command @, ns, conds, doc
@@ -242,7 +241,7 @@ MongoSource = module.exports = DataSource.extend
         else
           throw new Error 'matchingCmd should house either push or pushAll'
       when 'insert'
-        arr = cmd.val[path] ||= []
+        arr = matchingCmd.val[path] ||= []
         arr.push values...
       else
         throw new Error 'Unimplemented'

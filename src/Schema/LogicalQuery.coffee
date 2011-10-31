@@ -66,8 +66,6 @@ LogicalQuery:: =
     else
       logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
-    lFieldsPromises = []
-    phaseForLField = {} # Maps logical field hashes -> curr index in logical field's readFlow
     qDispatcher = new DSQueryDispatcher @queryMethod
     for [logicalField, ownerPathRelToRoot] in logicalFields
       qDispatcher.registerLogicalField logicalField, conds

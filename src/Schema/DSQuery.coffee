@@ -37,7 +37,7 @@ DSQuery:: =
       break
     fieldPromises = @fieldPromises
     if anyFields
-      return @source[@queryMethod] ns, @conds, fields, (err, json) ->
+      return @source.dataSchemasWithNs[ns][@queryMethod] @conds, fields, (err, json) ->
         for path, promise of fieldPromises
           promise.resolve err, json[path]
 

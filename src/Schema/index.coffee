@@ -146,7 +146,7 @@ Schema.applyOps = (oplog, callback) ->
       source[method] cmdSet, doc, dataField, conds, args...
 
 #    for source in logicalField.sources
-#      dataField = source.dataSchemas[ns][path]
+#      dataField = source[name][path]
 #      source[method] cmdSet, doc, ns, dataField, conds, args...
 
   return cmdSet.fire (err, extraAttrs) ->
@@ -163,12 +163,12 @@ Schema.static
   dataSchemas: []
   # We use this to define a "data source schema" and link it to
   # this "logical Schema".
-  source: (source, ns, fieldsConf, virtualsConf) ->
+  createDataSchema: (source, ns, fieldsConf) ->
     unless fieldsConf
       fieldsConf = ns
       ns = @ns
     Schema._sources[source._name] ||= source
-    dataSchema = source.createDataSchema @, ns, fieldsConf, virtualsConf
+    dataSchema = source.createDataSchema {LogicalSchema: @, ns}, fieldsConf
     @dataSchemas.push dataSchema
 
 #      # In case data schema already exists

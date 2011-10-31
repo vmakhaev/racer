@@ -1,6 +1,10 @@
 Promise = require '../Promise'
 
 # TODO Should we replace @source, @ns with @dataSkema ?
+# @param {DataSource} source
+# @param {String} ns is the namespace relative to the data source
+# @param {Object} conds
+# @param {Schema} doc
 Command = module.exports = (@source, @ns, @conds, @doc) ->
   @cid = cid if cid = @conds?.__cid__
   @method
@@ -40,9 +44,9 @@ Command:: =
       if doc = @doc
         # Transform data schema attributes from db result 
         # into logical schema attributes
-        dataSchema = source.dataSchemas[@ns]
+        dataSchema = source.dataSchemasWithNs[@ns]
         for attrName, attrVal of extraAttrs
-          dataField = dataSchema[attrName]
+          dataField = dataSchema.fields[attrName]
           if dataField.type?.uncast
             attrVal = dataField.type.uncast attrVal
           doc._doc[attrName] = attrVal
