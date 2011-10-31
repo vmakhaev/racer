@@ -143,6 +143,8 @@ Schema.applyOps = (oplog, callback) ->
     # TODO How does this fit in with STM? We need a rollback mechanism
     for dataField in dataFields
       {source} = dataField
+      if source is undefined
+        console.log dataField
       source[method] cmdSet, doc, dataField, conds, args...
 
 #    for source in logicalField.sources

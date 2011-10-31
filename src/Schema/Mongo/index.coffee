@@ -63,7 +63,7 @@ MongoSource = module.exports = DataSource.extend
     if type = types[descriptor.name || descriptor._name]
       return type
 
-    throw new Error 'Unsupported type'
+    throw new Error "Unsupported type descriptor #{descriptor}"
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
     parts = flattenedPath.split '.'
@@ -114,12 +114,12 @@ MongoSource = module.exports = DataSource.extend
       return false
 
     if dataField.type._name == 'Ref'
-      {pkeyName} = dataField
+      {pkeyName} = dataField.type
       if cid = val.cid # If the doc we're linking to is new
         dependencyCmd = cmdSet.commandsByCid[cid]
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
-        cmdSet.pipe dependencyCmd, cmd, (extraAttrs) ->
-          switch mathcingCmd.method
+        cmdSet.pipe dependencyCmd, matchingCmd, (extraAttrs) ->
+          switch matchingCmd.method
             when 'insert'
               matchingCmd.val[path] = extraAttrs[pkeyName]
             when 'update'
