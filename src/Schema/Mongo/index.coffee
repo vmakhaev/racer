@@ -84,7 +84,23 @@ MongoSource = module.exports = DataSource.extend
   # @param {String} path is the oplog op's path
   # @param {Object} val is the oplog op's val
   set: (cmdSet, doc, dataField, conds, path, val) ->
+    if dataField.type instanceof DataSchema && cid = val.cid
+      # Handle either embedded docs or refs
+      pending = cmdSet.pendingByCid[cid] ||= []
+      pending.push Array::slice.call arguments, 1
+      return cmdSet
+
+    # If prior pending ops are expecting a document with cid
+    if (cid = doc.cid) && (pending = cmdSet.pendingByCid[cid])
+      delete cmdSet.pendingByCid[cid]
+      newVal = {}
+      newVal[path] = val
+      for [pendingDoc, pendingDataField, pendingConds, pendingPath, pendingVal] in pending
+        @set cmdSet, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
+      return cmdSet
+
     {ns} = dataField
+
     matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
       {method: cmethod, val: cval} = cmd
       switch cmethod
@@ -114,11 +130,6 @@ MongoSource = module.exports = DataSource.extend
       if pkeyVal = val[pkeyName]
         @set cmdSet, dataField, conds, path, pkeyVal
         return cmdSet
-
-    if dataField.type._name == 'Object' && cid = val.cid
-      pending = cmdSet.pendingByCid[cid] ||= []
-      pending.push Array::slice.call arguments, 1
-      return cmdSet
 
     unless matchingCmd
       if cid = conds.__cid__

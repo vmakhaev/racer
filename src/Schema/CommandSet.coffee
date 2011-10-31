@@ -95,7 +95,6 @@ CommandSet:: =
             cb extraAttrs if cb
             callback null
     else
-      console.log require('util').inspect cmds, false, 3
       throw new Error 'Unimplemented'
 
     if currPos.next
