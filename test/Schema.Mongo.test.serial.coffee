@@ -56,7 +56,7 @@ module.exports =
       keywords: [String]
       pet: mongo.Dog
       # pet: { _id: ObjectId, name: String}
-      pets: [Object]
+      pets: [mongo.Dog]
     #  friendIds: [User._id]
     #  groupId: schema(Group)._id
     #,
@@ -287,7 +287,7 @@ module.exports =
 
 
   '''should properly persist a relation specified as an embedded document
-  and set as an object literal @single''': (done) ->
+  and set as an object literal''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -305,7 +305,7 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded document
-  as the configured logical schema relation @single''': (done) ->
+  as the configured logical schema relation''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
@@ -405,6 +405,7 @@ module.exports =
     errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
+  # Array Refs
   '''should persist a relation specified as an embedded array of
   documents as an embedded array of object literals on Mongo''': (done) ->
     u = new User name: 'Brian'
@@ -441,7 +442,7 @@ module.exports =
 
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
-  ObjectId and (b) the object identified by that ObjectId''': (done) ->
+  ObjectId and (b) the object identified by that ObjectId @single''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
