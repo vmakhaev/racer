@@ -305,13 +305,13 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded document
-  as the configured logical schema relation''': (done) ->
+  as the configured logical schema relation @single''': (done) ->
     u = new User name: 'Brian'
     u.set 'pet', name: 'Banana'
     u.save (err, createdUser) ->
       should.equal null, err
       _id = createdUser.get '_id'
-      User.findOne {_id}, (err, foundUser) ->
+      User.findOne {_id}, {select: ['_id', 'name', 'pet']}, (err, foundUser) ->
         should.equal null, err
         dog = foundUser.get 'pet'
         dog.should.be.an.instanceof Dog

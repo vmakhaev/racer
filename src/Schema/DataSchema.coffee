@@ -70,6 +70,7 @@ DataSchema:: =
       #    e.g., for queries that include a Ref
       #    QueryDispatcher?
 
+    fields = @fields
     @source.adapter.findOne @ns, conds, {}, (err, json) ->
       return sourceProm.resolve err if err
       return sourceProm.resolve null, null unless json
