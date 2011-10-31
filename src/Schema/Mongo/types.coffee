@@ -41,20 +41,12 @@ exports.Array = baseType.extend 'Array',
       else
         member
 
-# Object means an embedded document or the member of an embedded 
-# array if this is a recursive inferType call
-# TODO Can we remove exports.Object type?
-exports.Object = baseType.extend 'Object',
-  cast: (val) ->
-    return val.toJSON() if val instanceof Schema
-    return val
-
 exports.Ref = baseType.extend 'Ref',
   cast: (val) ->
     return @pkeyType.cast val
 
-  createField: ({pkeyType, pkeyName, source}) ->
-    field = new DataField {pkeyType, pkeyName, source}
+  createField: (opts) ->
+    field = new DataField @, opts
     field.deref = (pkeyVal, callback) ->
       conds = {}
       conds[pkeyName] = pkeyVal
