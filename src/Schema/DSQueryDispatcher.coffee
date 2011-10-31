@@ -33,6 +33,10 @@ DSQueryDispatcher:: =
             # TODO Alternatively to lFieldPromise.fulfilled lazy check, we can eagerly remove dFieldProm's callbacks upon an lFieldPromise fulfillment
             return if val is undefined || lFieldPromise.fulfilled
             # TODO modify this to handle pagination
+            val = dField.type.uncast val if dField.type?.uncast
+            return lFieldPromise.fulfill val
+
+            # TODO Deprecate
             unless dField.deref
               val = dField.type.uncast val if dField.type?.uncast
               return lFieldPromise.fulfill val

@@ -46,6 +46,7 @@ MongoSource = module.exports = DataSource.extend
           concreteRefType = Object.create source.types.Ref
           concreteRefType.pkeyType = ftype
           concreteRefType.pkeyName = path
+          concreteRefType.pointsToField = foreignDataField
           return concreteRefType
         # if array ref
         # if inverse ref
