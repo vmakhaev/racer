@@ -34,6 +34,12 @@ DataSchema:: =
   field: (path) -> $pointsTo: @fields[path]
 
   cast: (val) ->
+    fields = @fields
+    for path, v of val
+      type = fields[path].type
+      if type.cast
+        val[path] = type.cast v
+    return val
 
   # Adds defaults specified in the data source schema
   # to the Logical Source schema document.
