@@ -6,6 +6,7 @@ DSQueryDispatcher = require './DSQueryDispatcher'
 LogicalQuery = module.exports = (criteria) ->
   @_conditions = {}
   @_opts = {}
+  @_selects = []
   @find criteria if criteria
   return
 
@@ -25,16 +26,36 @@ LogicalQuery:: =
     return @ unless callback
     return @fire callback
 
-  findOne: (criteria, callback) ->
+  # query.findOne({id: 1}, function (err, foundDoc) { /* */});
+  # query.findOne({id: 1}, {select: ['*']}, function (err, foundDoc) { /* */});
+  # query.findOne(function (err, foundDoc) { /* */});
+  # query.findOne({id: 1});
+  findOne: (criteria, opts, callback) ->
     @queryMethod = 'findOne'
     if 'function' == typeof criteria
       callback = criteria
       criteria = null
-    else if criteria.constructor == Object
-      merge @_conditions, criteria
+    else
+      if 'function' == typeof opts
+        callback = opts
+        opts = null
+      if criteria.constructor == Object
+        merge @_conditions, criteria
+
+    if opts
+      for k, v of opts
+        if Array.isArray v
+          @[k] v...
+        else
+          @[k] v
 
     return @ unless callback
     return @fire callback
+
+  # @param {[String]} paths
+  select: (paths...) ->
+    @_selects.push paths...
+    return @
 
   castConditions: ->
     conds = @_conditions
@@ -58,11 +79,12 @@ LogicalQuery:: =
     # query followed by a merge+filter of the results, clustering attributes
     # by doc id.
     # Fields may be spread between two data sources
-    if select = @_opts.select
+    selects = @_selects
+    if selects.length
       # In a select, fields could be deeply nested fields that belong to another Logical Schema
       # than the RootLogicalSkema firing this query.
       # TODO Add this kind of logic to @castConditions
-      logicalFields = (RootLogicalSkema.lookupField path for path in select)
+      logicalFields = (RootLogicalSkema.lookupField path for path in selects)
     else
       logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
