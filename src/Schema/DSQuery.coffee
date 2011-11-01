@@ -6,6 +6,7 @@ DSQuery = module.exports = (@conds, @queryMethod) ->
   @fieldPromises = {}
   return
 
+# TODO
 DSQuery.condsRelTo = (dataField, LogicalSkema, conds) ->
 
 DSQuery:: =
@@ -37,7 +38,7 @@ DSQuery:: =
       break
     fieldPromises = @fieldPromises
     if anyFields
-      return @source.dataSchemasWithNs[ns][@queryMethod] @conds, fields, (err, json) ->
+      return @source.dataSchemasWithNs[ns][@queryMethod] @conds, {fields}, (err, json) ->
         for path, promise of fieldPromises
           promise.resolve err, json[path]
 

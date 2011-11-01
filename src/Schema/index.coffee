@@ -248,6 +248,14 @@ Schema.static
         return [field, subpath + '.' + ownerPathRelToSkema]
     throw new Error "path '#{path}' does not appear to be reachable from Schema #{@_name}"
 
+  # TODO This is duplicated in DataSchema
+  castObj: (obj) ->
+    fields = @fields
+    for path, val of obj
+      field = fields[path]
+      obj[path] = field.cast val if field.cast
+    return obj
+
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., Schema.find, Schema.findOne, etc
 LogicalQuery = require './LogicalQuery'
