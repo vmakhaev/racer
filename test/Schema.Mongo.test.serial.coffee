@@ -40,13 +40,8 @@ module.exports =
       pets: [Dog]
     # blog: Blog
     #  friends: [schema('User')]
-      # BRIAN: A Schema should be a special Type?
-      # But Types only make sense in the context of being used
-      # in a Schema definition. So perhaps, it is more accurate
-      # to say that Schema can have a Type interface
     #  group: schema('Group')
 
-    # mongo.connect 'mongodb://localhost/racer_test'
     #User.createDataSchema mongo, 'los_users',
     User.createDataSchema mongo,
       _id: mongo.pkey ObjectId
@@ -55,10 +50,11 @@ module.exports =
       tags: [String]
       keywords: [String]
       pet: mongo.Dog
-      # pet: { _id: ObjectId, name: String}
+      # pet: { _id: ObjectId, name: String} # TODO Object literals in Schemas
+      pets: (petIds) -> mongo.Dog.find _id: petIds
       pets: [mongo.Dog]
-    #  friendIds: [User._id]
-    #  groupId: schema(Group)._id
+    #  friendIds: [mongo.User.field '_id']
+    #  groupId: mongo.schema(Group)._id
     #,
     #  friends: User.friendIds
 

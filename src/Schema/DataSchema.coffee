@@ -60,63 +60,17 @@ DataSchema:: =
   # @param {Object} conds
   # @param {String->Field} fields
   # @param {Function} callback
-  findOne: (conds, fields, callback) ->
-    sourceProm = new Promise
-    sourceProm.bothback callback if callback
-    conds = @_castObj conds
-
-      # 2. Determine if we should generate any other queries
-      #    e.g., for queries that include a Ref
-      #    QueryDispatcher?
-
-    fields = @fields
-    @source.adapter.findOne @ns, conds, {}, (err, json) ->
-      return sourceProm.resolve err if err
-      return sourceProm.resolve null, null unless json
-
-      derefPromises = []
-      # TODO Part of the following block is duplicated in DataSource::_castObj
-      for path, val of json
-        resField = fields[path]
-        if resField.deref # Ducktyped @deref
-          do (path) ->
-            derefProm = resField.deref val, (err, dereffedJson) ->
-              # Uncast using the referenced data source schema
-  #            console.log dereffedJson
-  #            console.log resField
-  #            json[path] = resField.type.uncast dereffedJson if resField.type.uncast
-              json[path] = dereffedJson
-            derefPromises.push derefProm
-        else
-          json[path] = resField.cast val if resField.cast
-      switch derefPromises.length
-        when 0
-          return sourceProm.resolve null, json
-        when 1
-          adapterProm = derefPromises[0]
-        else
-          adapterProm = Promise.parallel derefPromises
-      return adapterProm.bothback (err) ->
-        sourceProm.resolve null, json
-    return sourceProm
-
-  # @param {String} ns is the namespace relative to the data source
-  # @param {Object} conds
-  # @param {String->Field} fields
-  # @param {Function} callback
   find: (conds, fields, callback) ->
     sourceProm = new Promise
     sourceProm.bothback callback if callback
-    # TODO ns is not always going to match up with logical ns
-    conds = @_castObj conds
+    conds = @castObj conds
     self = this
-    @adapter.find @ns, conds, {}, (err, array) ->
+    @source.adapter.find @ns, conds, {}, (err, array) ->
       return sourceProm.resolve err if err
       return sourceProm.resolve null, [] unless array.length
-      # TODO Should we have a separate Data Source Schema document, distinguishable from the Logical Schema?
       arr = []
       for json in array
-        arr.push self._castObj json
+        arr.push self.castObj json
       return sourceProm.resolve null, arr
     return sourceProm
 
@@ -130,7 +84,7 @@ DataSchema:: =
         val[path] = field.type.uncast v
     return val
 
-  _castObj: (obj) ->
+  castObj: (obj) ->
     fields = @fields
     for path, val of obj
       field = fields[path]
@@ -151,3 +105,11 @@ DataSchema:: =
     if type = source.inferType descriptor
       return type.createField conf
     return conf
+
+DataQuery = require './DataQuery'
+for queryMethodName, queryFn of DataQuery::
+  do (queryFn) ->
+    DataSchema::[queryMethodName] = ->
+      query = (new DataQuery).bind @
+      queryReturn = queryFn.apply query, arguments
+      return queryReturn

@@ -1,70 +1,13 @@
 {merge} = require '../util'
+AbstractQuery = require './AbstractQuery'
 Promise = require '../Promise'
-Schema = require './index'
 DSQueryDispatcher = require './DSQueryDispatcher'
 
 LogicalQuery = module.exports = (criteria) ->
-  @_conditions = {}
-  @_opts = {}
-  @_selects = []
-  @find criteria if criteria
+  AbstractQuery.call @, criteria
   return
 
-LogicalQuery:: =
-  where: (attr, val) ->
-    @_conditions[attr] = val
-    @
-
-  find: (criteria, callback) ->
-    @queryMethod = 'find'
-    if 'function' == typeof criteria
-      callback = criteria
-      criteria = null
-    else if criteria.constructor == Object
-      merge @_conditions, criteria
-
-    return @ unless callback
-    return @fire callback
-
-  # query.findOne({id: 1}, function (err, foundDoc) { /* */});
-  # query.findOne({id: 1}, {select: ['*']}, function (err, foundDoc) { /* */});
-  # query.findOne(function (err, foundDoc) { /* */});
-  # query.findOne({id: 1});
-  findOne: (criteria, opts, callback) ->
-    @queryMethod = 'findOne'
-    if 'function' == typeof criteria
-      callback = criteria
-      criteria = null
-    else
-      if 'function' == typeof opts
-        callback = opts
-        opts = null
-      if criteria.constructor == Object
-        merge @_conditions, criteria
-
-    if opts
-      for k, v of opts
-        if Array.isArray v
-          @[k] v...
-        else
-          @[k] v
-
-    return @ unless callback
-    return @fire callback
-
-  # @param {[String]} paths
-  select: (paths...) ->
-    @_selects.push paths...
-    return @
-
-  castConditions: ->
-    conds = @_conditions
-    fields = @schema.fields
-    for k, v of conds
-      field = fields[k]
-      conds[k] = field.cast v if field.cast
-    return conds
-
+LogicalQuery:: = merge new AbstractQuery(),
   # Takes the state of the current query, and fires off the query to all
   # data sources; then, collects and re-assembles the data into the
   # logical document and passes it to callback(err, doc)
@@ -106,17 +49,3 @@ LogicalQuery:: =
       firePromise.resolve null, result
 
     return firePromise
-
-
-
-        # Aggregate data fields into groups that are then each retrieved in separate queries
-        # Partition data fields by source, ns.
-        # Dispatch first attempt db queries to each source in parallel
-        # Handle results in a callback and dispatch additional queries if necessary
-        # conds = DSQuery.condsRelTo dField, LogicalSkema, @_conditions
-
-  # Binds this query to a CustomSchema
-  bind: (schema) ->
-    boundQuery = Object.create @
-    boundQuery.schema = schema
-    return boundQuery
