@@ -47,8 +47,6 @@ DataQuery:: = merge new AbstractQuery(),
           do (path) ->
             derefProm = resField.deref val, (err, dereffedJson) ->
               # Uncast using the referenced data source schema
-  #            console.log dereffedJson
-  #            console.log resField
   #            json[path] = resField.type.uncast dereffedJson if resField.type.uncast
               json[path] = dereffedJson
             derefPromises.push derefProm
