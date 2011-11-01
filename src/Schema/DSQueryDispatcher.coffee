@@ -8,15 +8,28 @@ DSQueryDispatcher = module.exports = (@_queryMethod) ->
   return
 
 DSQueryDispatcher:: =
+  _didNotFind: ([metas, dataField]) ->
+    return true if metas is undefined
+    return true unless metas.length
+    for {val} in metas
+      return true unless val?
+    return false
+  _didNotFindOne: ([val, dataField]) -> ! val?
+
   registerLogicalField: (logicalField, conds) ->
     unless logicalField.dataFields.length
       console.warn "`#{logicalField.path}` is a declared logical field of schema `#{logicalField.schema._name}, but does not correspond to any data schema component. Please add it to one of your data schemas."
       return
+
     self = this
     queryMethod = @_queryMethod
     @_logicalFieldsPromises.push lFieldPromise = new Promise
     dataFieldFlow = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
     lastPhase = dataFieldFlow.length - 1
+    fieldHandler = @['_' + queryMethod + 'FieldHandler']
+    # Promise for the future fetched data field value
+    dFieldPromCb = (err, val, dataField) -> fieldHandler err, val, dataField, lFieldPromise
+    noneFoundPredicate = if queryMethod == 'find' then @_didNotFind else @_didNotFindOne
     for [dataFields, parallelCallback], phase in dataFieldFlow
 #      if dataFields[0].dependsOn
 #        # TODO
@@ -27,35 +40,45 @@ DSQueryDispatcher:: =
         # TODO Transform conds based on dField and dField.schema
         q = @_findOrCreateQuery phase, dField.source, dField.ns, conds, queryMethod
         q.add dField, dFieldProm
-        do (dField) ->
-          dFieldProm.bothback (err, val) ->
-            # TODO handle err
-            # TODO Alternatively to lFieldPromise.fulfilled lazy check, we can eagerly remove dFieldProm's callbacks upon an lFieldPromise fulfillment
-            return if val is undefined || lFieldPromise.fulfilled
-            # TODO modify this to handle pagination
-            val = dField.type.uncast val if dField.type?.uncast
-            return lFieldPromise.fulfill val
+        # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
+        dFieldProm.bothback dFieldPromCb
 
-            # TODO Deprecate
-            unless dField.deref
-              val = dField.type.uncast val if dField.type?.uncast
-              return lFieldPromise.fulfill val
-            derefProm = dField.deref val
-            return derefProm.bothback (err, val) ->
-              lFieldPromise.resolve err, val
-
-      # Handle when we don't find the value in any of the current parallel data fields
-      ifNoneFoundPromise = Promise.parallel dFieldPromises...
+      phasePromise = Promise.parallel dFieldPromises...
       do (parallelCallback, phase) ->
-        ifNoneFoundPromise.bothback (err, vals...) ->
+        phasePromise.bothback (err, vals...) ->
           # TODO Handle err
           parallelCallback vals... if parallelCallback
-          noneFound = ! vals.some ([val]) -> val?
+          noneFound = vals.every noneFoundPredicate
           if phase == lastPhase
             lFieldPromise.fulfill undefined if noneFound
           else
             self._notifyPhase phase + 1, logicalField, noneFound
 
+  _findOneFieldHandler: (err, val, dataField, logicalFieldPromise) ->
+    # TODO handle err
+    # TODO Alternatively to logicalFieldPromise.fulfilled lazy check, we can eagerly remove dataFieldProm's callbacks upon an logicalFieldPromise fulfillment
+    return if val is undefined || logicalFieldPromise.fulfilled
+    val = dataField.type.uncast val if dataField.type?.uncast
+    return logicalFieldPromise.fulfill val
+
+    # TODO Deprecate
+    unless dataField.deref
+      val = dataField.type.uncast val if dataField.type?.uncast
+      return logicalFieldPromise.fulfill val
+    derefProm = dataField.deref val
+    return derefProm.bothback (err, val) ->
+      logicalFieldPromise.resolve err, val
+
+  _findFieldHandler: (err, values, dataField, logicalFieldPromise) ->
+    return if values is undefined || !values.length || logicalFieldPromise.fulfilled
+    # TODO modify this to handle pagination
+    dataType = dataField.type
+    for meta in values
+      if dataType.uncast
+        meta.val = dataType.uncast meta.val
+    return logicalFieldPromise.fulfill values
+
+  # @param {Function} callback(err, val)
   fire: (callback) ->
     queriesByHash = @_queriesByPhase[0]
     for _, queries of queriesByHash
@@ -64,6 +87,10 @@ DSQueryDispatcher:: =
     allPromise.bothback callback if callback
     return allPromise
 
+  # @param {Number} phase
+  # @param {DataSource} source
+  # @param {String} ns
+  # @param {Object} conds
   _findOrCreateQuery: (phase, source, ns, conds) ->
     queriesByHash = @_queriesByPhase[phase] ||= {}
     hash = @_hash source, ns
