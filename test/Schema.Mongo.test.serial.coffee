@@ -426,7 +426,7 @@ module.exports =
         done()
 
   '''should be able to properly retrieve an embedded array of documents
-  as the configured local schema relation [Schema] @single''': (done) ->
+  as the configured local schema relation [Schema]''': (done) ->
     u = new User name: 'Brian'
     u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
     u.save (err) ->
@@ -489,7 +489,7 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
-    commandSet = mongo._oplogToCommandSet u.oplog
+    commandSet = Schema._oplogToCommandSet u.oplog
     cmd = commandSet.singleCommand
     {method, args} = cmd.compile()
     args.should.eql [
@@ -506,7 +506,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
     u.set 'age', 26
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -522,7 +522,7 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -541,7 +541,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.del 'name'
     u.del 'age'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -557,7 +557,7 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -574,7 +574,7 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs', 'sf'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -591,7 +591,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'tags', 'sf'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
     cmd = cmdSet.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
@@ -609,7 +609,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'keywords', 'sf'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
 
     cmdIds = Object.keys cmdSet.commandsById
     cmdIds.should.have.length 2
@@ -643,7 +643,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'keywords', 'sf', 'socal'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
 
     cmdIds = Object.keys cmdSet.commandsById
     cmdIds.should.have.length 2
@@ -677,7 +677,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs', 'sf'
     u.push 'keywords', 'socal'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
 
     cmdIds = Object.keys cmdSet.commandsById
     cmdIds.should.have.length 2
@@ -710,7 +710,7 @@ module.exports =
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
     u.push 'keywords', 'socal'
-    cmdSet = mongo._oplogToCommandSet u.oplog
+    cmdSet = Schema._oplogToCommandSet u.oplog
 
     cmdIds = Object.keys cmdSet.commandsById
     cmdIds.should.have.length 2
@@ -747,7 +747,7 @@ module.exports =
     u1.push 'tags', 'nodejs'
     u2.push 'tags', 'sf'
 
-    cmdSet = mongo._oplogToCommandSet sharedOplog
+    cmdSet = Schema._oplogToCommandSet sharedOplog
 
     cmdIds = Object.keys cmdSet.commandsById
     cmdIds.length.should.equal 2
