@@ -88,7 +88,8 @@ MongoSource = module.exports = DataSource.extend
     if dataField.type instanceof DataSchema && cid = val.cid
       # Handle either embedded docs or refs
       pending = cmdSet.pendingByCid[cid] ||= []
-      pending.push Array::slice.call arguments, 1
+      op = ['set'].concat Array::slice.call(arguments, 1)
+      pending.push op
       return cmdSet
 
     # If prior pending ops are expecting a document with cid
@@ -96,8 +97,8 @@ MongoSource = module.exports = DataSource.extend
       delete cmdSet.pendingByCid[cid]
       newVal = {}
       newVal[path] = val
-      for [pendingDoc, pendingDataField, pendingConds, pendingPath, pendingVal] in pending
-        @set cmdSet, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
+      for [method, pendingDoc, pendingDataField, pendingConds, pendingPath, pendingVal] in pending
+        @[method] cmdSet, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
       return cmdSet
 
     {ns} = dataField
@@ -202,6 +203,14 @@ MongoSource = module.exports = DataSource.extend
 
   push: (cmdSet, doc, dataField, conds, path, values...) ->
     {ns} = dataField
+
+    if dataField.type.memberType instanceof DataSchema && cid = values[0].cid
+      for {cid} in values
+        # Handle embedded arrays of docs
+        pending = cmdSet.pendingByCid[cid] ||= []
+        op = ['push'].concat Array::slice.call(arguments, 1)
+        pending.push op
+      return cmdSet
 
     values = dataField.cast values if dataField?.cast
 

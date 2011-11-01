@@ -406,7 +406,7 @@ module.exports =
     errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
     done()
 
-  # Array Refs
+  # Embedded Array of Documents
   '''should persist a relation specified as an embedded array of
   documents as an embedded array of object literals on Mongo''': (done) ->
     u = new User name: 'Brian'
