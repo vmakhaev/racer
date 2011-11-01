@@ -132,8 +132,20 @@ Schema.fromPath = (path) ->
 # @param {Function} callback(err, doc)
 # @param {Schema} doc that originates the applyOps call
 Schema.applyOps = (oplog, callback) ->
-  cmdSet = new CommandSet
+  cmdSet = @_oplogToCommandSet oplog
+  return cmdSet.fire (err, extraAttrs) ->
+    return callback err if err
+    # `extraAttrs` are attributes that were not present in the oplog
+    # when sent to the source, but that were then created by the source.
+    # These new extraAttr need to be written back to the Schema document
+    # -- e.g., auto-incrementing primary key in MySQL
+    doc._doc[attrName] = attrVal for attrName, attrVal of extraAttrs if extraAttrs
+    return callback null
 
+# Keeping this as a separate function makes testing oplog to
+# command set possible.
+Schema._oplogToCommandSet = (oplog) ->
+  cmdSet = new CommandSet
   for op in oplog
     {doc, ns, conds, method, path, args} = operation.splat op
     # TODO Handle nested paths
@@ -143,22 +155,12 @@ Schema.applyOps = (oplog, callback) ->
     # TODO How does this fit in with STM? We need a rollback mechanism
     for dataField in dataFields
       {source} = dataField
-      if source is undefined
-        console.log dataField
       source[method] cmdSet, doc, dataField, conds, args...
 
 #    for source in logicalField.sources
 #      dataField = source[name][path]
 #      source[method] cmdSet, doc, ns, dataField, conds, args...
-
-  return cmdSet.fire (err, extraAttrs) ->
-    return callback err if err
-    # `extraAttrs` are attributes that were not present in the oplog
-    # when sent to the source, but that were then created by the source.
-    # These new extraAttr need to be written back to the Schema document
-    # -- e.g., auto-incrementing primary key in MySQL
-    doc._doc[attrName] = attrVal for attrName, attrVal of extraAttrs if extraAttrs
-    return callback null
+  return cmdSet
 
 Schema.static
   # TODO Do we even need dataSchemas as a static here?
