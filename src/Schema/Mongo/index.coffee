@@ -170,18 +170,16 @@ MongoSource = module.exports = DataSource.extend
     return cmdSet
 
 
-  del: (cmdSet, doc, ns, field, conds, path) ->
-    cmds = cmdSet.findCommands ns, conds
+  del: (cmdSet, doc, dataField, conds, path) ->
+    {ns} = dataField
 
-    for cmd in cmds
-      cmethod = cmd.method
-      if cmethod == 'update'
+    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
+      if cmd.method == 'update'
         $atomics = Object.keys cmd.val
         if $atomics.length > 1
           throw new Error 'Should not have > 1 $atomic per command'
-        if '$unset' of cmd.val
-          matchingCmd = cmd
-          break
+        return true if '$unset' of cmd.val
+      return false
 
     unless matchingCmd
       matchingCmd = new Command @, ns, conds, doc
@@ -196,7 +194,7 @@ MongoSource = module.exports = DataSource.extend
 
     switch matchingCmd.method
       when 'update'
-        cmd.val.$unset[path] = 1
+        matchingCmd.val.$unset[path] = 1
       else
         throw new Error 'Unsupported'
     return cmdSet
