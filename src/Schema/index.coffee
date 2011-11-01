@@ -333,20 +333,27 @@ merge Schema::,
     if 'function' != typeof callback
       vals.push callback
       callback = null
-    arr = @_doc[attr] ||= []
 
     {fields, ns} = LogicalSkema = @constructor
     # TODO DRY - This same code apperas in _assignAttrs
     # TODO In fact, this may already be part of Field::cast
     field = fields[attr]
-    vals = field.cast vals
-
+    vals = field.cast vals, if @isNew then @oplog else null
+    arr = @_doc[attr] ||= []
     arr.push vals...
+
     if _id = @_doc._id
       conds = {_id}
     else
       conds = __cid__: @cid
-    @oplog.push [@, ns, conds, 'push', attr, vals...]
+
+    if field.type.memberType.prototype instanceof Schema
+      setTo = []
+      for mem, i in vals
+        setTo[i] = cid: mem.cid
+      @oplog.splice @oplog.length-vals.length, 0, [@, @constructor.ns, conds, 'push', attr, setTo...]
+    else
+      @oplog.push [@, ns, conds, 'push', attr, vals...]
     if @_atomic
       @save callback
     return @
@@ -481,8 +488,8 @@ Schema.type 'Number',
   cast: (val) -> parseFloat val, 10
 
 Schema.type 'Array',
-  cast: (list) ->
-    return (@memberType.cast member for member in list)
+  cast: (list, oplog) ->
+    return (@memberType.cast member, oplog for member in list)
 
 operation =
   splat: ([doc, ns, conds, method, args...]) ->
