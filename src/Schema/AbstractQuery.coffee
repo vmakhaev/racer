@@ -21,7 +21,7 @@ AbstractQuery:: =
       if 'function' == typeof opts
         callback = opts
         opts = null
-      if criteria.constructor == Object
+      if criteria?.constructor == Object
         merge @_conditions, criteria
     
     @_applyOpts opts
@@ -42,7 +42,7 @@ AbstractQuery:: =
       if 'function' == typeof opts
         callback = opts
         opts = null
-      if criteria.constructor == Object
+      if criteria?.constructor == Object
         merge @_conditions, criteria
 
     @_applyOpts opts

@@ -26,9 +26,9 @@ Promise:: =
     @errbacks = []
     @
 
-  resolve: (err, val) ->
+  resolve: (err, vals...) ->
     return @error err if err
-    return @fulfill val
+    return @fulfill vals...
     @
 
   on: (callback, scope) ->
@@ -66,8 +66,8 @@ Promise.parallel = (promises...) ->
   parallelVals = []
   for promise, i in promises
     do (i) ->
-      promise.callback (val) ->
-        parallelVals[i] = [val]
+      promise.callback (vals...) ->
+        parallelVals[i] = vals
         --dependencies || compositePromise.fulfill parallelVals...
     promise.onClearValue -> compositePromise.clearValue()
   return compositePromise
@@ -83,6 +83,7 @@ Promise.pipe = (promiseA, promiseB) ->
   pipePromise = new Promise
   vals = []
   origPipeFulfill = pipePromise.fulfill
+  # TODO Handle multiple arguments vals...
   pipePromise.fulfill = (val) ->
     promiseA.fulfill val
   promiseA.bothback (err, val) ->

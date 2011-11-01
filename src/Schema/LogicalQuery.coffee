@@ -31,21 +31,41 @@ LogicalQuery:: = merge new AbstractQuery(),
     else
       logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
-    qDispatcher = new DSQueryDispatcher @queryMethod
+    queryMethod = @queryMethod
+    qDispatcher = new DSQueryDispatcher queryMethod
     for [logicalField, ownerPathRelToRoot] in logicalFields
       qDispatcher.registerLogicalField logicalField, conds
     firePromise = (new Promise).bothback fireCallback
     qDispatcher.fire (err, lFieldVals...) ->
       # TODO create a version of Promise.parallel that returns an Object as val in (err, val)
-      # TODO This works for findOne, not find. How to implement for find efficiently?
-      attrs = {}
-      for [lFieldVal], i in lFieldVals
-        [logicalField, ownerPathRelToRoot] = logicalFields[i]
-        attrPath = ownerPathRelToRoot
-        attrPath += '.' if attrPath
-        attrPath += logicalField.path
-        attrs[attrPath] = lFieldVal
-      result = new RootLogicalSkema attrs, false
+      switch queryMethod
+        when 'findOne'
+          attrs = {}
+          for [lFieldVal], i in lFieldVals
+            [logicalField, ownerPathRelToRoot] = logicalFields[i]
+            attrPath = ownerPathRelToRoot
+            attrPath += '.' if attrPath
+            attrPath += logicalField.path
+            attrs[attrPath] = lFieldVal
+          result = new RootLogicalSkema attrs, false
+        when 'find'
+          memberByPkey = {}
+          arrOfAttrs = []
+          for [arrOfLFieldVals], i in lFieldVals
+            continue if arrOfLFieldVals is undefined
+            [logicalField, ownerPathRelToRoot] = logicalFields[i]
+            attrPath = ownerPathRelToRoot
+            attrPath += '.' if attrPath
+            attrPath += logicalField.path
+            for {pkeyVal, val} in arrOfLFieldVals
+              unless member = memberByPkey[pkeyVal]
+                member = memberByPkey[pkeyVal] = {}
+                arrOfAttrs.push member
+              member[attrPath] = val
+          result = (new RootLogicalSkema attrs, false for attrs in arrOfAttrs)
+            
       firePromise.resolve null, result
 
     return firePromise
+
+LogicalQuery::constructor = LogicalQuery

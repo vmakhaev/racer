@@ -9,10 +9,9 @@ DataQuery = module.exports = (criteria) ->
 DataQuery:: = merge new AbstractQuery(),
   # Options methods
 
-  # TODO Do something with @fields
+  # TODO Do something with @_fields
   # @param {String->Field} fields
-  fields: (@fields) ->
-
+  fields: (@_fields) ->
 
   fire: (fireCallback) ->
     conds = @castConditions()
@@ -67,3 +66,14 @@ DataQuery:: = merge new AbstractQuery(),
     return firePromise
 
   _findFire: (firePromise) ->
+    {source, ns, fields} = DataSkema = @schema
+    source.adapter.find ns, @_conditions, {}, (err, array) ->
+      return firePromise.resolve err if err
+      return firePromise.resolve null, [] unless array.length
+      arr = []
+      for json in array
+        arr.push DataSkema.castObj json
+      return firePromise.resolve null, arr
+    return firePromise
+
+DataQuery::constructor = DataQuery
