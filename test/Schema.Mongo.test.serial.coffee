@@ -51,8 +51,12 @@ module.exports =
       keywords: [String]
       pet: mongo.Dog
       # pet: { _id: ObjectId, name: String} # TODO Object literals in Schemas
-      pets: (petIds) -> mongo.Dog.find _id: petIds
-      pets: [mongo.Dog]
+      # TODO Get DataQuery descriptor working
+      # TODO Get DataQuery descriptor working
+#      pets:
+#        $getter: (petIds) -> mongo.Dog.find _id: petIds
+#        $setter: (pets) ->
+      pets: [mongo.Dog] # TODO Using an Array descriptor
     #  friendIds: [mongo.User.field '_id']
     #  groupId: mongo.schema(Group)._id
     #,
@@ -181,15 +185,16 @@ module.exports =
         done()
 
   'should be able to retrieve > 1 docs after creating them': (done) ->
-    User.create name: 'Brian', (err, userOne) ->
+    User.create name: 'Brian', age: 26, (err, userOne) ->
       should.equal null, err
-      User.create name: 'Brian', (err, userTwo) ->
+      User.create name: 'Brian', age: 27, (err, userTwo) ->
         should.equal null, err
         User.find name: 'Brian', (err, found) ->
           should.equal null, err
           found.length.should.equal 2
-          found[0].get('_id').should.equal userOne.get('_id')
-          found[1].get('_id').should.equal userTwo.get('_id')
+          for attr in ['_id', 'name', 'age']
+            found[0].get(attr).should.equal userOne.get(attr)
+            found[1].get(attr).should.equal userTwo.get(attr)
           done()
 
   'a found document should not initially have an oplog': (done) ->
@@ -463,7 +468,7 @@ module.exports =
     , oplog
 
   '''should be able to properly retrieve an ObjectId Ref as the
-  configured local schema relation: Schema @single''': (done) ->
+  configured local schema relation: Schema''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',

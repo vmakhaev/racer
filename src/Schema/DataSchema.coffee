@@ -56,24 +56,6 @@ DataSchema:: =
         # TODO Ensure fieldName is part of logical schema AND data source schema; not part of data source schema but not logical schema
         document.set fieldName, defaultTo
 
-  # @param {String} ns is the namespace relative to the data source
-  # @param {Object} conds
-  # @param {String->Field} fields
-  # @param {Function} callback
-  find: (conds, fields, callback) ->
-    sourceProm = new Promise
-    sourceProm.bothback callback if callback
-    conds = @castObj conds
-    self = this
-    @source.adapter.find @ns, conds, {}, (err, array) ->
-      return sourceProm.resolve err if err
-      return sourceProm.resolve null, [] unless array.length
-      arr = []
-      for json in array
-        arr.push self.castObj json
-      return sourceProm.resolve null, arr
-    return sourceProm
-
   # When acting like a type
   createField: (opts) -> new DataField @, opts
   uncast: (val) ->
