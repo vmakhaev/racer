@@ -518,7 +518,7 @@ module.exports =
     ]
     done()
 
-  'should create a new $unset command for a single del': (done) ->
+  'should create a new $unset command for a single del @single': (done) ->
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
