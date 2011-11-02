@@ -453,6 +453,75 @@ module.exports =
   by that ObjectId''': (done) ->
     oplog = []
     Tweet.create
+      author: {name: 'the clown'}
+    , (err, tweet) ->
+      should.equal null, err
+      author = tweet.get 'author'
+      authorId = ObjectId.fromString author.get '_id'
+      tweetId = ObjectId.fromString tweet.get '_id'
+      mongo.adapter.findOne 'users', _id: authorId, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: authorId
+          name: 'the clown'
+        mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+          should.equal null, err
+          json.should.eql
+            _id: tweetId
+            author: authorId
+          done()
+    , oplog
+
+  '''should properly persist a relation specified as a ref and assigned
+  as a Schema doc as (a) an ObjectId and (b) the object identified
+  by that ObjectId''': (done) ->
+    oplog = []
+    author = new User name: 'the clown', true, oplog
+    Tweet.create
+      author: author
+    , (err, tweet) ->
+      should.equal null, err
+      foundAuthor = tweet.get 'author'
+      authorId = ObjectId.fromString foundAuthor.get '_id'
+      tweetId = ObjectId.fromString tweet.get '_id'
+      mongo.adapter.findOne 'users', _id: authorId, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: authorId
+          name: 'the clown'
+        mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+          should.equal null, err
+          json.should.eql
+            _id: tweetId
+            author: authorId
+          done()
+    , oplog
+
+  '''should record a relation as an ObjectId when assigned to an already
+  persisted Schema documents''': (done) ->
+    oplog = []
+    User.create name: 'the clown', (err, createdAuthor) ->
+      should.equal null, err
+      Tweet.create
+        author: createdAuthor
+      , (err, tweet) ->
+        should.equal null, err
+        tweetId = ObjectId.fromString tweet.get '_id'
+        mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+          should.equal null, err
+          authorId = ObjectId.fromString createdAuthor.get '_id'
+          json.should.eql
+            _id: tweetId
+            author: authorId
+          done()
+      , createdAuthor.oplog
+    , oplog
+
+  '''should properly persist a relation (+ other fields) specified as a ref and assigned
+  as an object literal as (a) an ObjectId and (b) the object identified
+  by that ObjectId''': (done) ->
+    oplog = []
+    Tweet.create
       status: 'why so serious?',
       author: {name: 'the clown'}
     , (err, tweet) ->
@@ -474,7 +543,7 @@ module.exports =
           done()
     , oplog
 
-  '''should properly persist a relation specified as a ref and assigned
+  '''should properly persist a relation (+ other fields) specified as a ref and assigned
   as a Schema doc as (a) an ObjectId and (b) the object identified
   by that ObjectId''': (done) ->
     oplog = []
@@ -501,7 +570,7 @@ module.exports =
           done()
     , oplog
 
-  '''should record a relation as an ObjectId when assigned to an already
+  '''should record a relation (+ other fields) as an ObjectId when assigned to an already
   persisted Schema documents''': (done) ->
     oplog = []
     User.create name: 'the clown', (err, createdAuthor) ->
