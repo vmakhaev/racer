@@ -21,6 +21,7 @@ DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, logicalPa
     dataField = fields[fieldName] = @_createFieldFrom descriptor, LogicalSkema?.fields[logicalPath], ns, fieldName
 
     if LogicalSkema
+      # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
       LogicalSkema.fields[logicalPath].dataFields.push dataField
   return
 

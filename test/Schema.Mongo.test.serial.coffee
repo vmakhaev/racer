@@ -492,7 +492,7 @@ module.exports =
 
   # Array Refs
   '''should properly persist a relation specified as an array ref as (a) the
-  ObjectIds and (b) the objects identified by these ObjectIds @single''': (done) ->
+  ObjectIds and (b) the objects identified by these ObjectIds''': (done) ->
     oplog = []
     blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
     User.create
@@ -519,7 +519,7 @@ module.exports =
     , oplog
 
   '''should be able to properly retrieve an [ObjectId] Array Ref as the
-  configured local schema relation: [Schema]''': (done) ->
+  configured local schema relation: [Schema] @single''': (done) ->
     oplog = []
     blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
     User.create
