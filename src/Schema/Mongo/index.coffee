@@ -48,6 +48,8 @@ MongoSource = module.exports = DataSource.extend
           concreteRefType.pkeyName = path
           concreteRefType.pointsToField = foreignDataField
           return concreteRefType
+        else
+          throw new Error 'Ensure that that you are pointing to a pkey'
         # if array ref
         # if inverse ref
         # if inverse array ref
@@ -86,7 +88,7 @@ MongoSource = module.exports = DataSource.extend
   # @param {Object} val is the oplog op's val
   set: (cmdSet, doc, dataField, conds, path, val) ->
     if dataField.type instanceof DataSchema && cid = val.cid
-      # Handle either embedded docs or refs
+      # Handle embedded docs
       pending = cmdSet.pendingByCid[cid] ||= []
       op = ['set'].concat Array::slice.call(arguments, 1)
       pending.push op
@@ -115,24 +117,6 @@ MongoSource = module.exports = DataSource.extend
             return true
       return false
 
-    if dataField.type._name == 'Ref'
-      {pkeyName} = dataField.type
-      if cid = val.cid # If the doc we're linking to is new
-        dependencyCmd = cmdSet.commandsByCid[cid]
-        # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
-        cmdSet.pipe dependencyCmd, matchingCmd, (extraAttrs) ->
-          switch matchingCmd.method
-            when 'insert'
-              matchingCmd.val[path] = extraAttrs[pkeyName]
-            when 'update'
-              matchingCmd.val.$set[path] = pkeyVal
-            else
-              throw new Error "Command method #{matchingCmd.method} isn't supported in thsi context"
-        return cmdSet
-      if pkeyVal = val[pkeyName]
-        @set cmdSet, dataField, conds, path, pkeyVal
-        return cmdSet
-
     unless matchingCmd
       if cid = conds.__cid__
         if pending = cmdSet.pendingByCid[cid]
@@ -145,25 +129,62 @@ MongoSource = module.exports = DataSource.extend
       matchingCmd.val = {}
       if conds.__cid__
         matchingCmd.method = 'insert'
-        if -1 == path.indexOf '.'
-          matchingCmd.val[path] = val
-        else
-          @_assignToUnflattened matchingCmd.val, path, val
       else
         matchingCmd.method = 'update'
-        (delta = {})[path] = val
-        matchingCmd.val.$set = delta
       cmdSet.index matchingCmd
       cmdSet.position matchingCmd
+
+    if dataField.type._name == 'Ref'
+      {pkeyName} = dataField.type
+      if cid = val.cid # If the doc we're linking to is new
+        dependencyCmd = cmdSet.commandsByCid[cid]
+        # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
+        cmdSet.pipe dependencyCmd, matchingCmd, (extraAttrs) ->
+          switch matchingCmd.method
+            when 'insert'
+              matchingCmd.val[path] = extraAttrs[pkeyName]
+            when 'update'
+              matchingCmd.val.$set[path] = pkeyVal
+            else
+              throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
+        return cmdSet
+      if pkeyVal = val[pkeyName]
+        @set cmdSet, dataField, conds, path, pkeyVal
+        return cmdSet
+
+    if dataField.type._name == 'Array' && dataField.type.memberType._name == 'Ref'
+      {pkeyName} = dataField.type.memberType
+      existingPkeyIndices = []
+      for mem, i in val
+        if (cid = mem.cid) && !pos # If mem.cid, i.e., if the doc we're linking to is new
+          pos = cmdSet.commandsByCid[cid].pos
+        else if pkeyVal = mem[pkeyName]
+          existingPkeyIndices.push [pkeyVal, i]
+      cmdSet.placeAfterPosition pos, matchingCmd, null, (prevPosFulfilledVals...) ->
+        pkeyVals = (pkeyVal for [extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
+        # Add the pkeys of the docs we didn't have to create back into the array
+        for [pkeyVal, i] in existingPkeyIndices
+          pkeyVals.splice i, 0, pkeyVal
+        switch matchingCmd.method
+          when 'insert'
+            matchingCmd.val[path] = pkeyVals
+          when 'update'
+            matchingCmd.val.$set[path] = pkeyVals
+          else
+            throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
       return cmdSet
 
     val = dataField.cast val if dataField.cast
 
     switch matchingCmd.method
       when 'update'
+        matchingCmd.val.$set ||= {}
         matchingCmd.val.$set[path] = val
       when 'insert'
-        @_assignToUnflattened matchingCmd.val, path, val
+        if -1 == path.indexOf '.'
+          matchingCmd.val[path] = val
+        else
+          @_assignToUnflattened matchingCmd.val, path, val
       else
         throw new Error 'Implement for other incoming method ' + matchingCmd.method
 

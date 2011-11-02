@@ -21,6 +21,10 @@ module.exports =
       _id: String
       name: String
 
+    Blog.createDataSchema mongo,
+      _id: mongo.pkey ObjectId
+      name: String
+
     Dog = Schema.extend 'Dog', 'dogs',
       _id: String
       name: String
@@ -38,6 +42,7 @@ module.exports =
       luckyNumbers: [Number]
       pet: Dog
       pets: [Dog]
+      blogs: [Blog]
     # blog: Blog
     #  friends: [schema('User')]
     #  group: schema('Group')
@@ -50,6 +55,7 @@ module.exports =
       tags: [String]
       keywords: [String]
       pet: mongo.Dog
+      blogs: [mongo.Blog.field '_id']
       # pet: { _id: ObjectId, name: String} # TODO Object literals in Schemas
       # TODO Get DataQuery descriptor working
       # TODO Get DataQuery descriptor working
@@ -443,7 +449,7 @@ module.exports =
 
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
-  ObjectId and (b) the object identified by that ObjectId''': (done) ->
+  ObjectId and (b) the object identified by that ObjectId @singles''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
@@ -484,6 +490,52 @@ module.exports =
         done()
     , oplog
 
+  # Array Refs
+  '''should properly persist a relation specified as an array ref as (a) the
+  ObjectIds and (b) the objects identified by these ObjectIds @single''': (done) ->
+    oplog = []
+    blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
+    User.create
+      blogs: blogsAttrs
+    , (err, user) ->
+      should.equal null, err
+      blogs = user.get 'blogs'
+      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
+      userId = ObjectId.fromString user.get '_id'
+      remaining = 1 + blogIds.length
+      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: userId
+          blogs: blogIds
+        --remaining || done()
+      for blogId, i in blogIds
+        do (blogId, i) ->
+          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
+            json.should.eql
+              _id: blogId
+              name: blogsAttrs[i].name
+            --remaining || done()
+    , oplog
+
+  '''should be able to properly retrieve an [ObjectId] Array Ref as the
+  configured local schema relation: [Schema]''': (done) ->
+    oplog = []
+    blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
+    User.create
+      blogs: blogsAttrs
+    , (err, user) ->
+      should.equal null, err
+      userId = user.get '_id'
+      User.findOne _id: userId, {select: ['_id', 'blogs']}, (err, foundUser) ->
+        should.equal null, err
+        blogs = foundUser.get 'blogs'
+        for blog, i in blogs
+          blog.should.be.an.instanceof Blog
+          blog.get('name').should.equal blogsAttrs[i].name
+        done()
+    , oplog
+
   # Command building
   'should create a new update $set command for a single set': (done) ->
     isNew = false
@@ -518,7 +570,7 @@ module.exports =
     ]
     done()
 
-  'should create a new $unset command for a single del @single': (done) ->
+  'should create a new $unset command for a single del': (done) ->
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
