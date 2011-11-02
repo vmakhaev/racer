@@ -177,10 +177,11 @@ MongoSource = module.exports = DataSource.extend
         positionMethod = 'position'
         positionArgs = [matchingCmd, positionCb]
       for mem, i in val
-        if (mem.isNew) && !pos # If mem.cid, i.e., if the doc we're linking to is new
-          positionMethod = 'placeAfterPosition'
-          pos = cmdSet.commandsByCid[mem.cid].pos
-          positionArgs = [pos, matchingCmd, null, positionCb]
+        if mem.isNew # If mem.cid, i.e., if the doc we're linking to is new
+          unless pos
+            positionMethod = 'placeAfterPosition'
+            pos = cmdSet.commandsByCid[mem.cid].pos
+            positionArgs = [pos, matchingCmd, null, positionCb]
         else if pkeyVal = dataField.type.memberType.cast mem.get pkeyName
           # TODO Next line does un-necessary work when there are no dependencies to create
           existingPkeyIndices.push [pkeyVal, i]
