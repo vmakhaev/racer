@@ -86,6 +86,7 @@ MongoSource = module.exports = DataSource.extend
   # @param {Object} conds is the oplog op's conds
   # @param {String} path is the oplog op's path
   # @param {Object} val is the oplog op's val
+  # TODO DRY
   set: (cmdSet, doc, dataField, conds, path, val) ->
     if dataField.type instanceof DataSchema && cid = val.cid
       # Handle embedded docs
@@ -136,6 +137,7 @@ MongoSource = module.exports = DataSource.extend
 
     if dataField.type._name == 'Ref'
       {pkeyName} = dataField.type
+      # TODO Change condition to val.isNew
       if cid = val.cid # If the doc we're linking to is new
         dependencyCmd = cmdSet.commandsByCid[cid]
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
@@ -149,18 +151,14 @@ MongoSource = module.exports = DataSource.extend
               throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
         return cmdSet
       if pkeyVal = val[pkeyName]
-        @set cmdSet, dataField, conds, path, pkeyVal
+        @set cmdSet, doc, dataField, conds, path, pkeyVal
         return cmdSet
 
     if dataField.type._name == 'Array' && dataField.type.memberType._name == 'Ref'
       {pkeyName} = dataField.type.memberType
       existingPkeyIndices = []
-      for mem, i in val
-        if (cid = mem.cid) && !pos # If mem.cid, i.e., if the doc we're linking to is new
-          pos = cmdSet.commandsByCid[cid].pos
-        else if pkeyVal = mem[pkeyName]
-          existingPkeyIndices.push [pkeyVal, i]
-      cmdSet.placeAfterPosition pos, matchingCmd, null, (prevPosFulfilledVals...) ->
+
+      positionCb = (prevPosFulfilledVals...) ->
         pkeyVals = (pkeyVal for [extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
         # Add the pkeys of the docs we didn't have to create back into the array
         for [pkeyVal, i] in existingPkeyIndices
@@ -172,14 +170,42 @@ MongoSource = module.exports = DataSource.extend
             matchingCmd.val.$set[path] = pkeyVals
           else
             throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
+      
+      if matchingCmd.pos
+        positionMethod = null
+      else
+        positionMethod = 'position'
+        positionArgs = [matchingCmd, positionCb]
+      for mem, i in val
+        if (mem.isNew) && !pos # If mem.cid, i.e., if the doc we're linking to is new
+          positionMethod = 'placeAfterPosition'
+          pos = cmdSet.commandsByCid[mem.cid].pos
+          positionArgs = [pos, matchingCmd, null, positionCb]
+        else if pkeyVal = dataField.type.memberType.cast mem.get pkeyName
+          # TODO Next line does un-necessary work when there are no dependencies to create
+          existingPkeyIndices.push [pkeyVal, i]
+      
+      if positionMethod
+        cmdSet[positionMethod] positionArgs...
+      else
+        pkeyVals = (pkeyVal for [pkeyVal] in existingPkeyIndices)
+        switch matchingCmd.method
+          when 'update'
+            set = matchingCmd.val.$set ||= {}
+            set[path] = pkeyVals
+          when 'insert'
+            if -1 == path.indexOf '.'
+              matchingCmd.val[path] = pkeyVals
+            else
+              @_assignToUnflattened matchingCmd.val, path, pkeyVals
       return cmdSet
 
     val = dataField.cast val if dataField.cast
 
     switch matchingCmd.method
       when 'update'
-        matchingCmd.val.$set ||= {}
-        matchingCmd.val.$set[path] = val
+        set = matchingCmd.val.$set ||= {}
+        set[path] = val
       when 'insert'
         if -1 == path.indexOf '.'
           matchingCmd.val[path] = val

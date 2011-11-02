@@ -367,6 +367,7 @@ merge Schema::,
     self = @
     Schema.applyOps oplog, (err) ->
       return callback err if err
+      self.isNew = false
       callback null, self
 
   validate: ->
