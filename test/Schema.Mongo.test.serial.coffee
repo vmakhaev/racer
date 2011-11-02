@@ -570,13 +570,10 @@ module.exports =
       should.equal null, err
       # TODO Again! Having to pass oplog in is very error prone. I forgot again this time. See TODO in the last test. Need a better api
       User.create blogs: [blogA, {name: 'Nom Nom Nom'}, new Blog({name: 'Random Tumblr Blog'}, true, blogA.oplog)], (err, user) ->
-        console.log user
         should.equal null, err
         userId = ObjectId.fromString user.get '_id'
         mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
           should.equal null, err
-          console.log "\nJSON"
-          console.log json
           json.blogs[0].should.eql ObjectId.fromString blogA.get('_id')
           blogIdB = json.blogs[1]
           blogIdC = json.blogs[2]
@@ -588,6 +585,21 @@ module.exports =
               blogC.name.should.eql 'Random Tumblr Blog'
               done()
       , blogA.oplog
+    , oplog
+
+  '''should properly order the pkeys in an array ref field, not in the order of array ref
+  member doc creation in a single oplog''': (done) ->
+    oplog = []
+    blogA = new Blog name: 'Blogorama', true, oplog
+    blogB = new Blog name: 'Nom Nom Nom', true, oplog
+    User.create blogs: [blogB, blogA], (err, user) ->
+      should.equal null, err
+      userId = ObjectId.fromString user.get '_id'
+      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+        should.equal null, err
+        json.blogs[0].should.eql ObjectId.fromString blogB.get('_id')
+        json.blogs[1].should.eql ObjectId.fromString blogA.get('_id')
+        done()
     , oplog
 
   '''should be able to properly retrieve an [ObjectId] Array Ref as the
