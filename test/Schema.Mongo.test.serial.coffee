@@ -449,7 +449,7 @@ module.exports =
 
   # Refs
   '''should properly persist a relation specified as a ref as (a) an
-  ObjectId and (b) the object identified by that ObjectId @singles''': (done) ->
+  ObjectId and (b) the object identified by that ObjectId''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',
@@ -471,6 +471,28 @@ module.exports =
             status: 'why so serious?'
             author: authorId
           done()
+    , oplog
+
+  '''should record a relation as an ObjectId when assigned to an already
+  persisted Schema documents''': (done) ->
+    oplog = []
+    User.create name: 'the clown', (err, createdAuthor) ->
+      should.equal null, err
+      Tweet.create
+        status: 'why so serious?',
+        author: createdAuthor
+      , (err, tweet) ->
+        should.equal null, err
+        tweetId = ObjectId.fromString tweet.get '_id'
+        mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+          should.equal null, err
+          authorId = ObjectId.fromString createdAuthor.get '_id'
+          json.should.eql
+            _id: tweetId
+            status: 'why so serious?'
+            author: authorId
+          done()
+      , oplog
     , oplog
 
   '''should be able to properly retrieve an ObjectId Ref as the
@@ -518,8 +540,30 @@ module.exports =
             --remaining || done()
     , oplog
 
+  '''should record a relation specified as an array ref as ObjectIds when
+  assigned to an array of already persisted Schema documents @single''': (done) ->
+    # TODO When oplog is passed in multiple times via nested creates, we end up preserving the ops, when we shouldn't be
+    oplog = []
+    Blog.create name: 'Blogorama', (err, blogA) ->
+      should.equal null, err
+      Blog.create name: 'Nom Nom Nom', (err, blogB) ->
+        should.equal null, err
+        User.create blogs: [blogA, blogB], (err, user) ->
+          should.equal null, err
+          userId = ObjectId.fromString user.get '_id'
+          mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+            should.equal null, err
+            blogIds = (ObjectId.fromString doc.get '_id' for doc in [blogA, blogB])
+            json.should.eql
+              _id: userId
+              blogs: blogIds
+            done()
+        , blogB.oplog
+      , blogA.oplog
+    , oplog
+
   '''should be able to properly retrieve an [ObjectId] Array Ref as the
-  configured local schema relation: [Schema] @single''': (done) ->
+  configured local schema relation: [Schema]''': (done) ->
     oplog = []
     blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
     User.create
