@@ -25,15 +25,9 @@ CommandSet = module.exports = ->
 # in both a parallel and serial manner upon CommandSet::fire
 CommandSet:: =
   positionBefore: (cmdToPos, cmdRel, callback) ->
-    if subjectPos = cmdToPos.pos
-      {cmds} = subjectPos
-      for [cmd], i in cmds
-        if cmd.id == cmdToPos.id
-          # TODO What if we splice out a callback?
-          subjectPos.cmds.splice i, 1
-          break
-
+    @clearPos cmdToPos
     targetPos = cmdRel.pos
+    # TODO Fix and test the following if/else logic
     if currPrev = targetPos.prev
       currPrev.next = { prev: currPrev, next: targetPos, cmds: [[cmdToPos, callback]] }
     else
@@ -47,6 +41,26 @@ CommandSet:: =
 
     # As an alternative to isMatchPredicate, we could subclass Command as MongoCommand and place the logic inside
     # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
+
+
+  placeAfterPosition: (pos, cmd, singleCallback, prevPosCallback) ->
+    @clearPos cmd
+    cmdMeta = [cmd, singleCallback, prevPosCallback]
+    if currNext = pos.next
+      currNext.cmds.push cmdMeta
+      cmd.pos = currNext
+    else
+      cmd.pos = pos.next = { prev: pos, cmds: [cmdMeta] }
+
+  clearPos: (cmdToRemove) ->
+    return unless targetPos = cmdToRemove.pos
+    {cmds} = targetPos
+    for [cmd], i in cmds
+      if cmd.id == cmdToRemove.id
+        # TODO What if we splice out a callback?
+        targetPos.cmds.splice i, 1
+        return
+
   findCommand: (ns, conds, isMatchPredicate) ->
     cmds = @commands[ns]
     return unless cmds
@@ -80,7 +94,8 @@ CommandSet:: =
   _setupPromises: (callback, currPos = @root, currProm = new Promise) ->
     cmds = currPos.cmds
     if cmds.length == 1
-      [cmd, cb] = cmds[0]
+      [cmd, cb, prevPosCb] = cmds[0]
+      currProm.callback prevPosCb if prevPosCb
       if currPos.next
         nextProm = new Promise
         currProm.callback ->
@@ -95,7 +110,17 @@ CommandSet:: =
             cb extraAttrs if cb
             callback null
     else
-      throw new Error 'Unimplemented'
+      currPosPromises = (new Promise for _ in cmds)
+      nextProm = Promise.parallel currPosPromises...
+      currProm.callback ->
+        for [cmd, cb, prevPosCb], i in cmds
+          currProm.callback prevPosCb if prevPosCb
+          cmdPromise = currPosPromises[i]
+          cmdPromise.callback cb if cb
+          do (cmdPromise) ->
+            cmd.fire (err, extraAttrs) ->
+              return callback err if err
+              cmdPromise.fulfill extraAttrs
 
     if currPos.next
       @_setupPromises callback, currPos.next, nextProm
