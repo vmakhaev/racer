@@ -492,7 +492,7 @@ module.exports =
             status: 'why so serious?'
             author: authorId
           done()
-      , oplog
+      , createdAuthor.oplog
     , oplog
 
   '''should be able to properly retrieve an ObjectId Ref as the
@@ -541,8 +541,9 @@ module.exports =
     , oplog
 
   '''should record a relation specified as an array ref as ObjectIds when
-  assigned to an array of already persisted Schema documents @single''': (done) ->
+  assigned to an array of already persisted Schema documents''': (done) ->
     # TODO When oplog is passed in multiple times via nested creates, we end up preserving the ops, when we shouldn't be
+    #      Figure out a less error-prone api
     oplog = []
     Blog.create name: 'Blogorama', (err, blogA) ->
       should.equal null, err
@@ -559,6 +560,33 @@ module.exports =
               blogs: blogIds
             done()
         , blogB.oplog
+      , blogA.oplog
+    , oplog
+
+  '''should be able to properly handle assigning an array ref field a mixed
+  array of both persisted and to-be-persisted Schema documents''': (done) ->
+    oplog = []
+    Blog.create name: 'Blogorama', (err, blogA) ->
+      should.equal null, err
+      # TODO Again! Having to pass oplog in is very error prone. I forgot again this time. See TODO in the last test. Need a better api
+      User.create blogs: [blogA, {name: 'Nom Nom Nom'}, new Blog({name: 'Random Tumblr Blog'}, true, blogA.oplog)], (err, user) ->
+        console.log user
+        should.equal null, err
+        userId = ObjectId.fromString user.get '_id'
+        mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+          should.equal null, err
+          console.log "\nJSON"
+          console.log json
+          json.blogs[0].should.eql ObjectId.fromString blogA.get('_id')
+          blogIdB = json.blogs[1]
+          blogIdC = json.blogs[2]
+          mongo.adapter.findOne 'blogs', _id: blogIdB, {}, (err, blogB) ->
+            blogB._id.should.eql blogIdB
+            blogB.name.should.eql 'Nom Nom Nom'
+            mongo.adapter.findOne 'blogs', _id: blogIdC, {}, (err, blogC) ->
+              blogC._id.should.eql blogIdC
+              blogC.name.should.eql 'Random Tumblr Blog'
+              done()
       , blogA.oplog
     , oplog
 

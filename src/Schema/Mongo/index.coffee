@@ -137,11 +137,13 @@ MongoSource = module.exports = DataSource.extend
 
     if dataField.type._name == 'Ref'
       {pkeyName} = dataField.type
-      # TODO Change condition to val.isNew
-      if cid = val.cid # If the doc we're linking to is new
+      if ((val instanceof Schema && val.isNew) || !(val instanceof Schema)) && cid = val.cid
+        cid = val.cid
         dependencyCmd = cmdSet.commandsByCid[cid]
         # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
-        cmdSet.pipe dependencyCmd, matchingCmd, (extraAttrs) ->
+        cmdSet.pipe dependencyCmd, matchingCmd, (incomingCid, extraAttrs) ->
+          if incomingCid != cid
+            throw new Error "Calling back with extraAttrs specified for doc cid #{cid} when we are expecting extraAttrs specified for command associated with doc cid #{incomingCid}"
           switch matchingCmd.method
             when 'insert'
               matchingCmd.val[path] = extraAttrs[pkeyName]
@@ -156,13 +158,26 @@ MongoSource = module.exports = DataSource.extend
 
     if dataField.type._name == 'Array' && dataField.type.memberType._name == 'Ref'
       {pkeyName} = dataField.type.memberType
-      existingPkeyIndices = []
 
       positionCb = (prevPosFulfilledVals...) ->
-        pkeyVals = (pkeyVal for [extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
-        # Add the pkeys of the docs we didn't have to create back into the array
-        for [pkeyVal, i] in existingPkeyIndices
-          pkeyVals.splice i, 0, pkeyVal
+
+        pkeyVals = (pkeyVal for [cid, extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
+        # Re-order prevPosFulfilledVals to match order of the array ref's doc ordering
+        pkeyVals = []
+        extraAttrsByCid = {}
+        for [cid, extraAttrs] in prevPosFulfilledVals
+          extraAttrsByCid[cid] = extraAttrs
+        for {cid}, i in val
+          if pkeyVal = extraAttrsByCid[cid]?[pkeyName]
+            # Add the pkeys created by just-run insert commands
+            pkeyVals[i] = pkeyVal
+          else
+            # Add the pkeys of the docs we didn't have to create
+            [pkeyVal, j] = existingPkeyIndices.shift()
+            if i != j
+              throw new Error "Expected an existing doc's pkey at index #{i}, but the next existing doc was remembered at position #{j}"
+            pkeyVals[j] = pkeyVal
+
         switch matchingCmd.method
           when 'insert'
             matchingCmd.val[path] = pkeyVals
@@ -176,6 +191,7 @@ MongoSource = module.exports = DataSource.extend
       else
         positionMethod = 'position'
         positionArgs = [matchingCmd, positionCb]
+      existingPkeyIndices = []
       for mem, i in val
         if mem.isNew # If mem.cid, i.e., if the doc we're linking to is new
           unless pos
