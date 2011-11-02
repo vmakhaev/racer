@@ -17,9 +17,6 @@ CommandSet = module.exports = ->
   @pendingByCid = {}
   return
 
-# TODO Eventually, this should sit above the
-#      Data Source layer, to be able to work
-#      across different data sources
 # CommandSet holds a set of related commands and maintains a 
 # dependency graph of commands which is used to fire commands 
 # in both a parallel and serial manner upon CommandSet::fire
@@ -99,15 +96,15 @@ CommandSet:: =
       if currPos.next
         nextProm = new Promise
         currProm.callback ->
-          cmd.fire (err, extraAttrs) ->
+          cmd.fire (err, cid, extraAttrs) ->
             return callback err if err
-            cb extraAttrs if cb
-            nextProm.resolve err, extraAttrs
+            cb cid, extraAttrs if cb
+            nextProm.resolve err, cid, extraAttrs
       else
         currProm.callback ->
-          cmd.fire (err, extraAttrs) ->
+          cmd.fire (err, cid, extraAttrs) ->
             return callback err if err
-            cb extraAttrs if cb
+            cb cid, extraAttrs if cb
             callback null
     else
       currPosPromises = (new Promise for _ in cmds)
@@ -118,9 +115,9 @@ CommandSet:: =
           cmdPromise = currPosPromises[i]
           cmdPromise.callback cb if cb
           do (cmdPromise) ->
-            cmd.fire (err, extraAttrs) ->
+            cmd.fire (err, cid, extraAttrs) ->
               return callback err if err
-              cmdPromise.fulfill extraAttrs
+              cmdPromise.fulfill cid, extraAttrs
 
     if currPos.next
       @_setupPromises callback, currPos.next, nextProm
