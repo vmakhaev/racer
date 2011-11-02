@@ -36,10 +36,6 @@ CommandSet:: =
     # Add cmd to command set if not already part of it
     @index cmdA
 
-    # As an alternative to isMatchPredicate, we could subclass Command as MongoCommand and place the logic inside
-    # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
-
-
   placeAfterPosition: (pos, cmd, singleCallback, prevPosCallback) ->
     @clearPos cmd
     cmdMeta = [cmd, singleCallback, prevPosCallback]
@@ -58,6 +54,8 @@ CommandSet:: =
         targetPos.cmds.splice i, 1
         return
 
+  # As an alternative to isMatchPredicate, we could subclass Command as MongoCommand and place the logic inside
+  # boolean method MongoCommand::doesMatch(opMethod, otherParams...)
   findCommand: (ns, conds, isMatchPredicate) ->
     cmds = @commands[ns]
     return unless cmds
@@ -90,6 +88,7 @@ CommandSet:: =
 
   _setupPromises: (callback, currPos = @root, currProm = new Promise) ->
     cmds = currPos.cmds
+    # console.log cmd for cmd in cmds
     if cmds.length == 1
       [cmd, cb, prevPosCb] = cmds[0]
       currProm.callback prevPosCb if prevPosCb
