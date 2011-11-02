@@ -51,4 +51,4 @@ Command:: =
             attrVal = dataField.type.uncast attrVal
           doc._doc[attrName] = attrVal
 
-      callback err, extraAttrs
+      callback err, doc.cid, extraAttrs

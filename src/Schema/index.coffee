@@ -133,17 +133,13 @@ Schema.fromPath = (path) ->
 # @param {Schema} doc that originates the applyOps call
 Schema.applyOps = (oplog, callback) ->
   cmdSet = @_oplogToCommandSet oplog
-  return cmdSet.fire (err, extraAttrs) ->
+  return cmdSet.fire (err, cid, extraAttrs) ->
     return callback err if err
-    # `extraAttrs` are attributes that were not present in the oplog
-    # when sent to the source, but that were then created by the source.
-    # These new extraAttr need to be written back to the Schema document
-    # -- e.g., auto-incrementing primary key in MySQL
-    doc._doc[attrName] = attrVal for attrName, attrVal of extraAttrs if extraAttrs
     return callback null
 
 # Keeping this as a separate function makes testing oplog to
 # command set possible.
+# TODO This should be able to handle more refined write flow control
 Schema._oplogToCommandSet = (oplog) ->
   cmdSet = new CommandSet
   for op in oplog
@@ -156,10 +152,6 @@ Schema._oplogToCommandSet = (oplog) ->
     for dataField in dataFields
       {source} = dataField
       source[method] cmdSet, doc, dataField, conds, args...
-
-#    for source in logicalField.sources
-#      dataField = source[name][path]
-#      source[method] cmdSet, doc, ns, dataField, conds, args...
   return cmdSet
 
 Schema.static
