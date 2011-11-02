@@ -61,14 +61,6 @@ DSQueryDispatcher:: =
     val = dataField.type.uncast val if dataField.type?.uncast
     return logicalFieldPromise.fulfill val
 
-    # TODO Deprecate
-    unless dataField.deref
-      val = dataField.type.uncast val if dataField.type?.uncast
-      return logicalFieldPromise.fulfill val
-    derefProm = dataField.deref val
-    return derefProm.bothback (err, val) ->
-      logicalFieldPromise.resolve err, val
-
   _findFieldHandler: (err, values, dataField, logicalFieldPromise) ->
     return if values is undefined || !values.length || logicalFieldPromise.fulfilled
     # TODO modify this to handle pagination

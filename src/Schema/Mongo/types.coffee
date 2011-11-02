@@ -1,6 +1,7 @@
 Schema = require '../index'
 {merge} = require '../../util'
 DataField = require '../DataField'
+Promise = require '../../Promise'
 
 baseType =
   createField: (opts) -> new DataField @, opts
@@ -40,6 +41,40 @@ exports.Array = baseType.extend 'Array',
         memberType.cast member
       else
         member
+
+  # TODO Do we need uncast for Array?
+  uncast: (arr) ->
+    memberType = @memberType
+    for v in arr
+      if memberType.uncast
+        memberType.uncast v
+      else
+        v
+
+  createField: (opts) ->
+    field = new DataField @, opts
+    if @memberType._name == 'Ref'
+      # @param {[ObjectId]} pkeyVals
+      # @param {Function} callback(err, arrOfDereffedJson)
+      field.deref = (pkeyVals, callback) ->
+        # TODO DRY up this and Ref.reateField's field.deref
+        derefProm = new Promise
+        derefProm.bothback callback
+        {pkeyName}  = memberType = @type.memberType
+        {source, ns} = memberType.pointsToField
+        conds = {}
+        DataSkema = source.dataSchemasWithNs[ns]
+        remaining = pkeyVals.length
+        arr = []
+        for pkeyVal, i in pkeyVals
+          conds[pkeyName] = pkeyVal
+          do (i) ->
+            DataSkema.findOne conds, null, (err, json) ->
+              return derefProm.fail err if err
+              arr[i] = json
+              --remaining || derefProm.fulfill arr
+        return derefProm
+    return field
 
 exports.Ref = baseType.extend 'Ref',
   cast: (val) ->
