@@ -684,6 +684,83 @@ module.exports =
       , blogA.oplog
     , oplog
 
+  '''should properly persist a relation (+ other fields) specified as an array ref as (a) the
+  ObjectIds and (b) the objects identified by these ObjectIds''': (done) ->
+    oplog = []
+    blogsAttrs = [{name: 'Blogorama'}, {name: 'Nom Nom Nom'}]
+    User.create
+      name: 'Mr. Rogers'
+      blogs: blogsAttrs
+    , (err, user) ->
+      should.equal null, err
+      blogs = user.get 'blogs'
+      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
+      userId = ObjectId.fromString user.get '_id'
+      remaining = 1 + blogIds.length
+      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+        should.equal null, err
+        json.should.eql
+          _id: userId
+          name: 'Mr. Rogers'
+          blogs: blogIds
+        --remaining || done()
+      for blogId, i in blogIds
+        do (blogId, i) ->
+          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
+            json.should.eql
+              _id: blogId
+              name: blogsAttrs[i].name
+            --remaining || done()
+    , oplog
+
+  '''should record a relation (+ other fields) specified as an array ref as ObjectIds when
+  assigned to an array of already persisted Schema documents''': (done) ->
+    #      Figure out a less error-prone api
+    oplog = []
+    Blog.create name: 'Blogorama', (err, blogA) ->
+      should.equal null, err
+      Blog.create name: 'Nom Nom Nom', (err, blogB) ->
+        should.equal null, err
+        User.create name: 'Turtle', blogs: [blogA, blogB], (err, user) ->
+          should.equal null, err
+          userId = ObjectId.fromString user.get '_id'
+          mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+            should.equal null, err
+            blogIds = (ObjectId.fromString doc.get '_id' for doc in [blogA, blogB])
+            json.should.eql
+              _id: userId
+              name: 'Turtle'
+              blogs: blogIds
+            done()
+        , blogB.oplog
+      , blogA.oplog
+    , oplog
+
+  '''should be able to properly handle assigning (other fields and) an array ref field a mixed
+  array of both persisted and to-be-persisted Schema documents''': (done) ->
+    oplog = []
+    Blog.create name: 'Blogorama', (err, blogA) ->
+      should.equal null, err
+      # TODO Again! Having to pass oplog in is very error prone. I forgot again this time. See TODO in the last test. Need a better api
+      User.create name: 'Brogrammer', blogs: [blogA, {name: 'Nom Nom Nom'}, new Blog({name: 'Random Tumblr Blog'}, true, blogA.oplog)], (err, user) ->
+        should.equal null, err
+        userId = ObjectId.fromString user.get '_id'
+        mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+          should.equal null, err
+          json.name.should.equal 'Brogrammer'
+          json.blogs[0].should.eql ObjectId.fromString blogA.get('_id')
+          blogIdB = json.blogs[1]
+          blogIdC = json.blogs[2]
+          mongo.adapter.findOne 'blogs', _id: blogIdB, {}, (err, blogB) ->
+            blogB._id.should.eql blogIdB
+            blogB.name.should.eql 'Nom Nom Nom'
+            mongo.adapter.findOne 'blogs', _id: blogIdC, {}, (err, blogC) ->
+              blogC._id.should.eql blogIdC
+              blogC.name.should.eql 'Random Tumblr Blog'
+              done()
+      , blogA.oplog
+    , oplog
+
   '''should properly order the pkeys in an array ref field, not in the order of array ref
   member doc creation in a single oplog''': (done) ->
     oplog = []
