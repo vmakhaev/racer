@@ -32,15 +32,16 @@ MongoSource = module.exports = DataSource.extend
           if flag == '$pkey'
             type = Object.create type
             type.isPkey = true
-          else if 'function' == typeof type[flag]
+            continue
+          if 'function' == typeof type[flag]
             if Array.isArray arg
               type[flag] arg...
             else
               type[flag] arg
-          else if type[flag] is undefined
-            type[flag] = arg
-          else
+            continue
+          if type[flag] isnt undefined
             throw new Error "Unsupported type descriptor flag #{flag}"
+          type[flag] = arg
         return type
       if foreignDataField = descriptor.$pointsTo
         {source, path, type: ftype} = foreignDataField
