@@ -43,11 +43,12 @@ module.exports =
       pet: Dog
       pets: [Dog]
       blogs: [Blog]
+      tweets: ['Tweet']
     # blog: Blog
     #  friends: [schema('User')]
     #  group: schema('Group')
 
-    #User.createDataSchema mongo, 'los_users',
+    # TODO Test using legacy namespaces where logical schema ns != data schema ns
     User.createDataSchema mongo,
       _id: mongo.pkey ObjectId
       name: String
@@ -55,17 +56,19 @@ module.exports =
       tags: [String]
       keywords: [String]
       pet: mongo.Dog
+      pets: [mongo.Dog]
+
       blogs: [mongo.Blog.field '_id']
       # pet: { _id: ObjectId, name: String} # TODO Object literals in Schemas
       # TODO Get DataQuery descriptor working
       # TODO Get DataQuery descriptor working
-#      pets:
-#        $getter: (petIds) -> mongo.Dog.find _id: petIds
-#        $setter: (pets) ->
-      pets: [mongo.Dog] # TODO Using an Array descriptor
+#      blogs: arrayRef (getter, setter) ->
+#        getter (blogIds) -> mongo.Blog.find _id: blogIds
+#        setter (blogIds) ->
     #  friendIds: [mongo.User.field '_id']
     #  groupId: mongo.schema(Group)._id
-    #,
+#    ,
+#      tweets: mongo.Tweet.where('author', '@user._id')
     #  friends: User.friendIds
 
     # # Alt A
@@ -793,6 +796,62 @@ module.exports =
           blog.get('name').should.equal blogsAttrs[i].name
         done()
     , oplog
+
+  # Inverse Refs as an Array
+#  '''should properly persist a relation that is the collection of documents that
+#  point to me via a Ref field in their schemas @single''': (done) ->
+#    oplog = []
+#    tweetsAttrs = [
+#      { status: 'hasta' }
+#      { status: 'la' }
+#      { status: 'vista' }
+#      { status: 'baby' }
+#    ]
+#    User.create
+#      name: 'Brian'
+#      tweets: tweetAttrs
+#    , (err, user) ->
+#      should.equal null, err
+#      userId = ObjectId.fromString user.get '_id'
+#      blogs = user.get 'blogs'
+#      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
+#      remaining = 1 + blogIds.length
+#      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+#        Object.keys(json).length.should.equal 2
+#        json._id.should.not.be.undefined
+#        json.name.should.not.be.undefined
+#        should.equal undefined, json._id
+#        --remaining || done()
+#      for blogId, i in blogIds
+#        do (i) ->
+#          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
+#            json.status.should.equal tweetsAttrs[i].status
+#            --remaining || done()
+#    , oplog
+#
+#  '''should properly retrieve a relation that is the collection of documents that
+#  point to me via a Ref field in their schemas @single''': (done) ->
+#    oplog = []
+#    tweetsAttrs = [
+#      { status: 'hasta' }
+#      { status: 'la' }
+#      { status: 'vista' }
+#      { status: 'baby' }
+#    ]
+#    User.create
+#      name: 'Brian'
+#      tweets: tweetAttrs
+#    , (err, user) ->
+#      should.equal null, err
+#      userId = user.get '_id'
+#      User.findOne _id: userId, {select: ['_id', 'tweets']}, (err, foundUser) ->
+#        should.equal null, err
+#        tweets = foundUser.get 'tweets'
+#        for tweet, i in tweets
+#          tweet.should.be.an.instanceof Tweet
+#          tweet.get('status').should.equal tweetsAttrs[i].status
+#        done()
+#    , oplog
 
   # Command building
   'should create a new update $set command for a single set': (done) ->

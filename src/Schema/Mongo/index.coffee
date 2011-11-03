@@ -4,6 +4,7 @@ CommandSet = require '../CommandSet'
 Command = require '../Command'
 Schema = require '../index'
 DataSchema = require '../DataSchema'
+DataQuery = require '../DataQuery'
 
 # Important roles are:
 # - Convert oplog to db queries
@@ -62,6 +63,28 @@ MongoSource = module.exports = DataSource.extend
 
     if descriptor instanceof DataSchema
       return descriptor
+
+    if descriptor instanceof DataQuery
+      query = descriptor
+      conds = query._conditions
+      for path, toEval of conds
+        [_, targetPath] = toEval.split '.'
+        conds[path] = (doc) -> doc[targetPath]
+      # TODO Implement these as Data-level Virtual Types?
+      type = switch query.queryMethod
+        when 'findOne'
+          types.OneInverse
+        when 'find'
+          types.ManyInverse
+      type = Object.create type
+      type._baseQuery = query
+      type.get = (doc) ->
+        _baseQuery: query
+        get: -> # `this` is the document
+          {_conditions: conds} = query = @_baseQuery.clone()
+          conds[path] = conds[path](@)
+          return query.fire()
+      return type
 
     if type = types[descriptor.name || descriptor._name]
       return type

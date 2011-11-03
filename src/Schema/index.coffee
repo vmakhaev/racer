@@ -13,6 +13,7 @@ Schema = module.exports = ->
   return
 
 Schema._schemas = {}
+Schema._schemaPromises = {}
 Schema._subclasses = []
 Schema._sources = {}
 Schema.extend = (name, ns, config) ->
@@ -83,10 +84,17 @@ Schema.extend = (name, ns, config) ->
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
     field = Schema.createFieldFrom descriptor, fieldName
-    field.sources = [] # TODO Are we using field.sources?
-    field.path = fieldName
-    field.schema = SubClass
-    SubClass.field fieldName, field
+    bootstrapField = (field, fieldName, SubClass) ->
+      field.sources = [] # TODO Are we using field.sources?
+      field.path = fieldName
+      field.schema = SubClass
+      SubClass.field fieldName, field
+    if field instanceof Promise
+      field.callback (schema) ->
+        field = schema.createField()
+        bootstrapField field, fieldName, SubClass
+    else
+      bootstrapField field, fieldName, SubClass
 
   SubClass.cast = (val, oplog) ->
     if val.constructor == Object
@@ -95,6 +103,8 @@ Schema.extend = (name, ns, config) ->
     if val instanceof @
       return val
     throw new Error val + ' is neither an Object nor a ' + @_name
+
+  Schema._schemaPromises[name]?.fulfill SubClass
 
   return Schema._schemas[ns] = SubClass
 
@@ -370,20 +380,6 @@ merge Schema::,
       errors = errors.concat result
     return if errors.length then errors else true
 
-  # We use this when we want to reference a Schema
-  # that we have yet to define.
-  schema: (schemaAsString) ->
-    promise = new Promise
-    promise.on (schema) =>
-      SubSchema = @_schemas[schemaAsString]
-      SubSubSchema = ->
-        SubSchema.apply @, arguments
-      SubSubSchema:: = new SubSchema
-      SubSubSchema.assignAsTypeToSchemaField schema, fieldName
-    Schema.on 'define', (schema) ->
-      if schema._name == schemaAsString
-        promise.fulfill schema, promise.fieldName
-    return promise
 
 #Schema.async = AsyncSchema
 #
@@ -439,6 +435,7 @@ Schema.createFieldFrom = (descriptor, fieldName) ->
       #   validator: fn
       type = Schema.inferType descriptor.$type
       delete descriptor.$type
+      return type if type instanceof Promise
       field = type.createField()
       for method, arg of descriptor
         if Array.isArray arg
@@ -446,17 +443,23 @@ Schema.createFieldFrom = (descriptor, fieldName) ->
         else
           field[method] arg
       return field
-  type = @inferType descriptor, fieldName
+  type = @inferType descriptor
+  return type if type instanceof Promise
   return type.createField()
 
 # Factory method returning new Field instances
 # generated from factory create new Type instances
-Schema.inferType = (descriptor, fieldName) ->
+Schema.inferType = (descriptor) ->
   if Array.isArray descriptor
     arrayType = @type 'Array'
-    memberType = descriptor[0]
+    memberDescriptor = descriptor[0]
     concreteArrayType = Object.create arrayType
-    concreteArrayType.memberType = @inferType memberType
+    memberType = @inferType memberDescriptor
+    if memberType instanceof Promise
+      memberType.callback (schema) ->
+        concreteArrayType.memberType = schema
+    else
+      concreteArrayType.memberType = memberType
     return concreteArrayType
   if descriptor == Number
     return @type('Number')
@@ -465,16 +468,33 @@ Schema.inferType = (descriptor, fieldName) ->
   if descriptor == String
     return @type('String')
 
-  # e.g., descriptor = schema('User')
-  if descriptor instanceof Promise
-    if @_schemas[fieldName]
-      promise.fulfill schema, fieldName
-    return descriptor
+  if typeof descriptor is 'string'
+    promise = @_schemaPromise descriptor
+    return promise
 
   return descriptor if 'function' == typeof descriptor || # If we're a Schema ctor
                        descriptor instanceof Type
 
   throw new Error 'Unsupported descriptor ' + descriptor
+
+# We use this when we want to reference a Schema
+# that we have not yet defined but that we need for another
+# Schema that we are defining at the moment.
+# e.g.,
+# Schema.extend 'User', 'users',
+#   tweets: [Schema.schema 'Tweet']
+# @param {String} schemaName
+Schema._schemaPromise = (schemaName) ->
+  # Cache only one promise per schema
+  schemaPromises = @_schemaPromises
+  return promise if promise = schemaPromises[schemaName]
+  promise = new Promise
+  schemasToDate = Schema._schemas
+  for ns, schema of schemasToDate
+    if schema._name == schemaName
+      promise.fulfill schema
+      return promise
+  return promise
 
 Schema.type 'String',
   cast: (val) -> val.toString()
