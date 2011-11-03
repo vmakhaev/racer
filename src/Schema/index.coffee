@@ -18,7 +18,7 @@ Schema._sources = {}
 Schema.extend = (name, ns, config) ->
   ParentClass = @
   # Constructor
-  # @param {Object} attrs maps path names to their values
+  # @param {String -> Object} attrs maps path names to their values
   # @param {Boolean} isNew; will be false when populating this from the
   #                  results of a Query
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
@@ -26,15 +26,15 @@ Schema.extend = (name, ns, config) ->
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
   SubClass = (attrs, @isNew = true, @oplog = Schema.oplog || []) ->
     @oplog.reset ||= -> @length = 0
-
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
 
     @_doc = {}
 
-    ParentClass.apply @, arguments
+    ParentClass.apply @, Array::slice.call arguments
 
     if attrs
+      # TODO attrs may contain nested objects
       for attrName, attrVal of attrs
         # TODO Lazy casting later?
         field = SubClass.fields[attrName]
@@ -349,7 +349,7 @@ merge Schema::,
     Schema.applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
-    if 'function' != typeof callback
+    if typeof callback isnt 'function'
       vals.push callback
       callback = null
 
@@ -483,22 +483,25 @@ Schema.inferType = (descriptor) ->
   if descriptor == String
     return @type('String')
 
+  # Allows developers to refer to a LogicalSchema before it's defined
   if typeof descriptor is 'string'
     promise = @_schemaPromise descriptor
     return promise
 
-  return descriptor if 'function' == typeof descriptor || # If we're a Schema ctor
+  return descriptor if descriptor.prototype instanceof Schema ||
                        descriptor instanceof Type
 
   throw new Error 'Unsupported descriptor ' + descriptor
 
-Schema._schemaPromises = {}
 # We use this when we want to reference a Schema
 # that we have not yet defined but that we need for another
 # Schema that we are defining at the moment.
 # e.g.,
 # Schema.extend 'User', 'users',
-#   tweets: [Schema.schema 'Tweet']
+#   tweets: ['Tweet']
+#
+# Schema.inferType delegates to the following Schema promise code
+Schema._schemaPromises = {}
 # @param {String} schemaName
 Schema._schemaPromise = (schemaName) ->
   # Cache only one promise per schema
