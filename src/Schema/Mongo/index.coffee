@@ -5,6 +5,7 @@ Command = require '../Command'
 Schema = require '../index'
 DataSchema = require '../DataSchema'
 DataQuery = require '../DataQuery'
+Promise = require '../../Promise'
 
 # Important roles are:
 # - Convert oplog to db queries
@@ -86,8 +87,13 @@ MongoSource = module.exports = DataSource.extend
           return query.fire()
       return type
 
+    if descriptor instanceof Promise
+      return descriptor
+
     if type = types[descriptor.name || descriptor._name]
       return type
+
+    # console.log descriptor
 
     throw new Error "Unsupported type descriptor #{descriptor}"
 

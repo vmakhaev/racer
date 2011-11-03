@@ -13,7 +13,6 @@ Schema = module.exports = ->
   return
 
 Schema._schemas = {}
-Schema._schemaPromises = {}
 Schema._subclasses = []
 Schema._sources = {}
 Schema.extend = (name, ns, config) ->
@@ -169,10 +168,26 @@ Schema.static
   dataSchemas: []
   # We use this to define a "data source schema" and link it to
   # this "logical Schema".
-  createDataSchema: (source, ns, fieldsConf) ->
-    unless fieldsConf
+  createDataSchema: (source, ns, fieldsConf, virtualsConf) ->
+    # (source, fieldsConf)
+    if arguments.length == 2
+      virtualsConf = null
       fieldsConf = ns
-      ns = @ns
+      ns = @ns # Inherit data schema ns from logical schema
+
+    if arguments.length == 3
+      if typeof ns isnt 'string'
+        # (source, fieldsConf, virtualsConf)
+        virtualsConf = fieldsConf
+        fieldsConf = ns
+        ns = @ns # Inherit data schema ns from logical schema
+      else
+        # (source, ns, fieldsConf)
+        virtualsConf = null
+
+    # else
+    # (source, ns, fieldsConf, virtualsConf)
+
     Schema._sources[source._name] ||= source
     dataSchema = source.createDataSchema {LogicalSchema: @, ns}, fieldsConf
     @dataSchemas.push dataSchema
@@ -265,9 +280,9 @@ Schema.static
 LogicalQuery = require './LogicalQuery'
 for queryMethodName, queryFn of LogicalQuery::
   do (queryFn) ->
-    Schema.static queryMethodName, ->
+    Schema.static queryMethodName, (args...)->
       query = (new LogicalQuery).bind @
-      queryReturn = queryFn.apply query, arguments
+      queryReturn = queryFn.apply query, args
       return queryReturn
 
 Schema:: = EventEmitter::
@@ -477,6 +492,7 @@ Schema.inferType = (descriptor) ->
 
   throw new Error 'Unsupported descriptor ' + descriptor
 
+Schema._schemaPromises = {}
 # We use this when we want to reference a Schema
 # that we have not yet defined but that we need for another
 # Schema that we are defining at the moment.
@@ -488,7 +504,7 @@ Schema._schemaPromise = (schemaName) ->
   # Cache only one promise per schema
   schemaPromises = @_schemaPromises
   return promise if promise = schemaPromises[schemaName]
-  promise = new Promise
+  promise = schemaPromises[schemaName] = new Promise
   schemasToDate = Schema._schemas
   for ns, schema of schemasToDate
     if schema._name == schemaName
