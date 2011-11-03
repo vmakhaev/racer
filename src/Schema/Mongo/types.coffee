@@ -57,7 +57,7 @@ exports.Array = baseType.extend 'Array',
       # @param {[ObjectId]} pkeyVals
       # @param {Function} callback(err, arrOfDereffedJson)
       field.deref = (pkeyVals, callback) ->
-        # TODO DRY up this and Ref.reateField's field.deref
+        # TODO DRY up this and Ref.createField's field.deref
         derefProm = new Promise
         derefProm.bothback callback
         {pkeyName}  = memberType = @type.memberType

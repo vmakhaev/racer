@@ -1,5 +1,4 @@
 module.exports =
-
   mergeAll: (to, froms...) ->
     for from in froms
       to[key] = value for key, value of from
@@ -86,6 +85,17 @@ module.exports =
       return false unless deepEqual a[key], b[key]
     return true
 
+  # TODO Test this
+  deepCopy: (obj) ->
+    if obj.constructor == Object
+      ret = {}
+      ret[k] = deepCopy v for k, v of obj
+      return ret
+    if Array.isArray obj
+      ret = []
+      ret.push deepCopy v for v in obj
+      return ret
+    return obj
 
 isArguments = (object) ->
   Object::toString.call(object) == '[object Arguments]'

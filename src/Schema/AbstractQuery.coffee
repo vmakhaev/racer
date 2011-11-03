@@ -1,5 +1,6 @@
 {merge} = require '../util'
 Promise = require '../Promise'
+{deepCopy} = require '../util'
 
 AbstractQuery = module.exports = (criteria) ->
   @_conditions = {}
@@ -8,6 +9,12 @@ AbstractQuery = module.exports = (criteria) ->
   return
 
 AbstractQuery:: =
+  clone: ->
+    clone = Object.create @
+    clone._conditions = deepCopy @_conditions
+    clone._selects = @_selects.slice()
+    return clone
+
   where: (attr, val) ->
     @_conditions[attr] = val
     @
