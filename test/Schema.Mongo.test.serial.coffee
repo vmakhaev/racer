@@ -67,8 +67,8 @@ module.exports =
 #        setter (blogIds) ->
     #  friendIds: [mongo.User.field '_id']
     #  groupId: mongo.schema(Group)._id
-#    ,
-#      tweets: mongo.Tweet.where('author', '@user._id')
+    ,
+      tweets: mongo.schema('Tweet').where('author', '@user._id')
     #  friends: User.friendIds
 
     # # Alt A
@@ -798,60 +798,60 @@ module.exports =
     , oplog
 
   # Inverse Refs as an Array
-#  '''should properly persist a relation that is the collection of documents that
-#  point to me via a Ref field in their schemas @single''': (done) ->
-#    oplog = []
-#    tweetsAttrs = [
-#      { status: 'hasta' }
-#      { status: 'la' }
-#      { status: 'vista' }
-#      { status: 'baby' }
-#    ]
-#    User.create
-#      name: 'Brian'
-#      tweets: tweetAttrs
-#    , (err, user) ->
-#      should.equal null, err
-#      userId = ObjectId.fromString user.get '_id'
-#      blogs = user.get 'blogs'
-#      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
-#      remaining = 1 + blogIds.length
-#      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
-#        Object.keys(json).length.should.equal 2
-#        json._id.should.not.be.undefined
-#        json.name.should.not.be.undefined
-#        should.equal undefined, json._id
-#        --remaining || done()
-#      for blogId, i in blogIds
-#        do (i) ->
-#          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
-#            json.status.should.equal tweetsAttrs[i].status
-#            --remaining || done()
-#    , oplog
-#
-#  '''should properly retrieve a relation that is the collection of documents that
-#  point to me via a Ref field in their schemas @single''': (done) ->
-#    oplog = []
-#    tweetsAttrs = [
-#      { status: 'hasta' }
-#      { status: 'la' }
-#      { status: 'vista' }
-#      { status: 'baby' }
-#    ]
-#    User.create
-#      name: 'Brian'
-#      tweets: tweetAttrs
-#    , (err, user) ->
-#      should.equal null, err
-#      userId = user.get '_id'
-#      User.findOne _id: userId, {select: ['_id', 'tweets']}, (err, foundUser) ->
-#        should.equal null, err
-#        tweets = foundUser.get 'tweets'
-#        for tweet, i in tweets
-#          tweet.should.be.an.instanceof Tweet
-#          tweet.get('status').should.equal tweetsAttrs[i].status
-#        done()
-#    , oplog
+  '''should properly persist a relation that is the collection of documents that
+  point to me via a Ref field in their schemas @single''': (done) ->
+    oplog = []
+    tweetsAttrs = [
+      { status: 'hasta' }
+      { status: 'la' }
+      { status: 'vista' }
+      { status: 'baby' }
+    ]
+    User.create
+      name: 'Brian'
+      tweets: tweetsAttrs
+    , (err, user) ->
+      should.equal null, err
+      userId = ObjectId.fromString user.get '_id'
+      blogs = user.get 'blogs'
+      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
+      remaining = 1 + blogIds.length
+      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+        Object.keys(json).length.should.equal 2
+        json._id.should.not.be.undefined
+        json.name.should.not.be.undefined
+        should.equal undefined, json._id
+        --remaining || done()
+      for blogId, i in blogIds
+        do (i) ->
+          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
+            json.status.should.equal tweetsAttrs[i].status
+            --remaining || done()
+    , oplog
+
+  '''should properly retrieve a relation that is the collection of documents that
+  point to me via a Ref field in their schemas @single''': (done) ->
+    oplog = []
+    tweetsAttrs = [
+      { status: 'hasta' }
+      { status: 'la' }
+      { status: 'vista' }
+      { status: 'baby' }
+    ]
+    User.create
+      name: 'Brian'
+      tweets: tweetAttrs
+    , (err, user) ->
+      should.equal null, err
+      userId = user.get '_id'
+      User.findOne _id: userId, {select: ['_id', 'tweets']}, (err, foundUser) ->
+        should.equal null, err
+        tweets = foundUser.get 'tweets'
+        for tweet, i in tweets
+          tweet.should.be.an.instanceof Tweet
+          tweet.get('status').should.equal tweetsAttrs[i].status
+        done()
+    , oplog
 
   # Command building
   'should create a new update $set command for a single set': (done) ->

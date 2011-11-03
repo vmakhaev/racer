@@ -18,11 +18,25 @@ DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, logicalPa
   for fieldName, descriptor of conf
     # Add field to the data schema
     logicalPath = dataPathToLogicalPath[fieldName] || fieldName
-    dataField = fields[fieldName] = @_createFieldFrom descriptor, LogicalSkema?.fields[logicalPath], ns, fieldName
+    logicalField = LogicalSkema?.fields[logicalPath]
+    dataField = @_createFieldFrom descriptor, logicalField, ns, fieldName
 
-    if LogicalSkema
-      # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
-      LogicalSkema.fields[logicalPath].dataFields.push dataField
+    bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
+      fields[fieldName] = dataField
+      if LogicalSkema
+        # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
+        LogicalSkema.fields[logicalPath].dataFields.push dataField
+
+    if dataField instanceof Promise
+      source = @source
+      do (fieldName, logicalPath, dataField) ->
+        dataField.callback (DataSkema) ->
+          conf = {path: fieldName, ns, logicalField, source}
+          dataField = DataSkema.createField conf
+          bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
+    else
+      bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
+
   return
 
 DataSchema:: =
@@ -86,13 +100,38 @@ DataSchema:: =
     source = @source
     conf = {path, ns, logicalField, source}
     if type = source.inferType descriptor
-      return type.createField conf
+      if type instanceof Promise
+        return type
+      else
+        return type.createField conf
     return conf
 
 DataQuery = require './DataQuery'
 for queryMethodName, queryFn of DataQuery::
   do (queryFn) ->
-    DataSchema::[queryMethodName] = ->
+    DataSchema::[queryMethodName] = (args...)->
       query = (new DataQuery).bind @
-      queryReturn = queryFn.apply query, arguments
+      queryReturn = queryFn.apply query, args
       return queryReturn
+
+# Used to generate DataSchema.Buffer, which is used in DataSource::schema(schemaName) to buffer up methods invoked on an instance of DataSchema that has not yet been defined
+bufferify = (Klass) ->
+  klassProto = Klass::
+  BufferKlass = -> return
+  bufferKlassProto = BufferKlass::
+  buffer = []
+  for k, v of klassProto
+    continue unless typeof v is 'function'
+    do (v) ->
+      bufferKlassProto[k] = (args...) ->
+        buffer.push [v, args]
+        return @
+  if 'flush' of klassProto && typeof klassProto.flush is 'function'
+    throw new Error 'Trying to over-write method `flush`'
+  bufferKlassProto.flush = (klassInstance) ->
+    for [fn, args] in buffer
+      fn.apply klassInstance, args
+    return
+  return BufferKlass
+
+DataSchema.Buffer = bufferify DataSchema
