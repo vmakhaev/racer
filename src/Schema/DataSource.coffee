@@ -1,5 +1,6 @@
 {merge} = require '../util'
 DataSchema = require './DataSchema'
+Promise = require '../Promise'
 
 # Custom DataSource classes are defined via:
 # DataSource.extend({
@@ -8,6 +9,7 @@ DataSchema = require './DataSchema'
 # })
 DataSource = module.exports = (@adapter) ->
   @dataSchemasWithNs = {} # Maps namespace -> Data Schema
+  @_schemaPromises = {}
   @adapter ||= new AdapterClass() if AdapterClass = @AdapterClass
   return
 
@@ -48,7 +50,16 @@ DataSource:: =
     ds = @[name] = new DataSchema @, name, ns, LogicalSkema, fieldsConf
     if ns
       @dataSchemasWithNs[ns] = ds
+    @_schemaPromises[name]?.fulfill ds
     return ds
+
+  schema: (schemaName) ->
+    return promise if promise = @_schemaPromises[schemaName]
+    promise = @_schemaPromises[schemaName] = new Promise
+    bufferingDataSchema = new DataSchema.Buffer
+    promise.callback (schema) ->
+      bufferingDataSchema.flush schema
+    return bufferingDataSchema
 
 DataSource.extend = (config) ->
   ParentSource = @
