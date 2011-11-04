@@ -78,15 +78,15 @@ Schema.extend = (name, ns, config) ->
   SubClass.fields = {}
   SubClass.field = (fieldName, setToField) ->
     return field if field = @fields[fieldName]
-    @fields[fieldName] = setToField
+    return @fields[fieldName] = setToField
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
     field = Schema.createFieldFrom descriptor, fieldName
     bootstrapField = (field, fieldName, SubClass) ->
       field.sources = [] # TODO Are we using field.sources?
-      field.path = fieldName
-      field.schema = SubClass
+      field.path    = fieldName
+      field.schema  = SubClass
       SubClass.field fieldName, field
     if field instanceof Promise
       field.callback (schema) ->
@@ -99,8 +99,7 @@ Schema.extend = (name, ns, config) ->
     if val.constructor == Object
       return new @ val, true, oplog if oplog
       return new @ val
-    if val instanceof @
-      return val
+    return val if val instanceof @
     throw new Error val + ' is neither an Object nor a ' + @_name
 
   Schema._schemaPromises[name]?.fulfill SubClass
@@ -110,8 +109,8 @@ Schema.extend = (name, ns, config) ->
 Schema._statics = {}
 Schema.static = (name, fn) ->
   if name.constructor == Object
-    for static, fn of name
-      @static static, fn
+    for _name, fn of name
+      @static _name, fn
     return @
   
   @_statics[name] = @[name] = fn
@@ -126,11 +125,11 @@ Schema.static = (name, fn) ->
 
 Schema.fromPath = (path) ->
   pivot = path.indexOf '.'
-  ns = path.substring 0, pivot
-  path = path.substring pivot+1
+  ns    = path.substring 0, pivot
+  path  = path.substring pivot+1
   pivot = path.indexOf '.'
-  id = path.substring 0, pivot
-  path = path.substring pivot+1
+  id    = path.substring 0, pivot
+  path  = path.substring pivot+1
   return { Skema: @_schemas[ns], id, path }
 
 
@@ -143,8 +142,7 @@ Schema.fromPath = (path) ->
 Schema.applyOps = (oplog, callback) ->
   cmdSet = @_oplogToCommandSet oplog
   return cmdSet.fire (err, cid, extraAttrs) ->
-    return callback err if err
-    return callback null
+    return callback(err || null)
 
 # Keeping this as a separate function makes testing oplog to
 # command set possible.
@@ -221,15 +219,6 @@ Schema.static
     oplog = [ [@ns, conds] ]
     Schema.applyOps oplog, callback
 
-  findById: (id, callback) ->
-    query = { conds: {id: id}, meta: '*' }
-    @query query, callback
-
-  query: (query, callback) ->
-    # Compile query into a set of data source queries
-    # with the proper async flow control.
-    throw new Error 'Undefined'
-
   plugin: (plugin, opts) ->
     plugin @, opts
     return @
@@ -242,8 +231,8 @@ Schema.static
   # Otherwise, invoking with this fn signature will result 
   # in defining a read flow for the given fields
   defineReadFlow: (args...) ->
-    callback = args.pop()
-    fieldNames = args
+    callback    = args.pop()
+    fieldNames  = args
     flowBuilder = new FlowBuilder
 
     callback flowBuilder
@@ -387,8 +376,8 @@ merge Schema::,
   validate: ->
     errors = []
     for fieldName, field of @constructor.fields
-      result = field.validate(@_doc[fieldName])
-      continue if true == result
+      result = field.validate @_doc[fieldName]
+      continue if result is true
       errors = errors.concat result
     return if errors.length then errors else true
 
@@ -439,54 +428,54 @@ Schema.type = (typeName, config) ->
 Schema._types = {}
 
 Schema.createFieldFrom = (descriptor, fieldName) ->
-  if descriptor.constructor == Object
-    if '$type' of descriptor
-      # e.g.,
-      # username:
-      #   $type: String
-      #   validator: fn
-      type = Schema.inferType descriptor.$type
-      delete descriptor.$type
-      return type if type instanceof Promise
-      field = type.createField()
-      for method, arg of descriptor
-        if Array.isArray arg
-          field[method] arg...
-        else
-          field[method] arg
-      return field
-  type = @inferType descriptor
-  return type if type instanceof Promise
-  return type.createField()
+  if descriptor.constructor != Object
+    type = @inferType descriptor
+    return type if type instanceof Promise
+    return type.createField()
+
+  if type = descriptor.$type
+    # e.g.,
+    # username:
+    #   $type: String
+    #   validator: fn
+    type = @inferType type
+    delete descriptor.$type
+    # Will be a Promise when the descriptor involves a
+    # yet-to-be-defined Schema
+    return type if type instanceof Promise
+    field = type.createField()
+    for method, arg of descriptor
+      if Array.isArray arg
+        field[method] arg...
+      else
+        field[method] arg
+    return field
 
 # Factory method returning new Field instances
 # generated from factory create new Type instances
 Schema.inferType = (descriptor) ->
   if Array.isArray descriptor
-    arrayType = @type 'Array'
-    memberDescriptor = descriptor[0]
+    arrayType         = @type 'Array'
     concreteArrayType = Object.create arrayType
-    memberType = @inferType memberDescriptor
+    memberDescriptor  = descriptor[0]
+    memberType        = @inferType memberDescriptor
     if memberType instanceof Promise
       memberType.callback (schema) ->
         concreteArrayType.memberType = schema
     else
       concreteArrayType.memberType = memberType
     return concreteArrayType
-  if descriptor == Number
-    return @type('Number')
-  if descriptor == Boolean
-    return @type('Boolean')
-  if descriptor == String
-    return @type('String')
+  switch descriptor
+    when Number  then return @type 'Number'
+    when Boolean then return @type 'Boolean'
+    when String  then return @type 'String'
 
   # Allows developers to refer to a LogicalSchema before it's defined
   if typeof descriptor is 'string'
-    promise = @_schemaPromise descriptor
-    return promise
+    return @_schemaPromise descriptor
 
-  return descriptor if descriptor.prototype instanceof Schema ||
-                       descriptor instanceof Type
+  return descriptor if descriptor           instanceof Type ||
+                       descriptor.prototype instanceof Schema
 
   throw new Error 'Unsupported descriptor ' + descriptor
 

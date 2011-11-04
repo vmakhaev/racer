@@ -14,9 +14,9 @@ DSQuery:: =
   # @param {LogicalField} logicalField
   # @param {Boolean} didNotFind indicates whether the success/failure of the previous DSQuery
   notifyAboutPrevQuery: (logicalField, didNotFind) ->
-    logicalFields = @_logicalFields
-    logicalPath = logicalField.path
-    dataFields = logicalFields[logicalPath]
+    logicalFields  = @_logicalFields
+    logicalPath    = logicalField.path
+    dataFields     = logicalFields[logicalPath]
     _includeFields = @_includeFields
     for dataField in dataFields
       if didNotFind then delete _includeFields[dataField.path]
@@ -43,7 +43,7 @@ DSQuery:: =
     fieldPromises = @_fieldPromises
     if anyFields
       queryMethod = @_queryMethod
-      DataSkema = @source.dataSchemasWithNs[ns]
+      DataSkema   = @source.dataSchemasWithNs[ns]
       return DataSkema[queryMethod] @conds, {fields}, (err, json) ->
         if queryMethod == 'find'
           for path, field of fields

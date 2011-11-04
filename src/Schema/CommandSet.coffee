@@ -3,18 +3,11 @@ Promise = require '../Promise'
 
 # @param {Object} opToCommand maps op names -> command generator
 CommandSet = module.exports = ->
-  @root = null
-
-  # maps hash -> ns -> [Command instances]
-  @commands = {}
-
-  # maps command id -> Command instance
-  @commandsById = {}
-
+  @root          = null
+  @commands      = {} # maps hash -> ns -> [Command instances]
+  @commandsById  = {} # maps command id -> Command instance
   @commandsByCid = {}
-
-  # We throw op data into here that depends on a cid that we have yet to see.
-  @pendingByCid = {}
+  @pendingByCid  = {} # Contains op data dependent on cid's we have yet to see
   return
 
 # CommandSet holds a set of related commands and maintains a 
@@ -32,9 +25,7 @@ CommandSet:: =
 
   pipe: (cmdA, cmdB, callback) ->
     @positionBefore cmdA, cmdB, callback
-
-    # Add cmd to command set if not already part of it
-    @index cmdA
+    @index cmdA # Add cmd to command set if not already part of it
 
   placeAfterPosition: (pos, cmd, singleCallback, prevPosCallback) ->
     @clearPos cmd
@@ -74,7 +65,7 @@ CommandSet:: =
     commands = @commands[ns] ||= []
     index = commands.push command
     id = command.id = command.ns + '.' + index
-    @commandsById[id] = command
+    @commandsById[id]   = command
     @commandsByCid[cid] = command if cid = command.cid
     return true
 

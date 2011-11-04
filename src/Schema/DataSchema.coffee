@@ -17,9 +17,9 @@ DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, logicalPa
   fields = @fields = {}
   for fieldName, descriptor of conf
     # Add field to the data schema
-    logicalPath = dataPathToLogicalPath[fieldName] || fieldName
+    logicalPath  = dataPathToLogicalPath[fieldName] || fieldName
     logicalField = LogicalSkema?.fields[logicalPath]
-    dataField = @_createFieldFrom descriptor, logicalField, ns, fieldName
+    dataField    = @_createFieldFrom descriptor, logicalField, ns, fieldName
 
     bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
       fields[fieldName] = dataField
@@ -99,20 +99,17 @@ DataSchema:: =
   _createFieldFrom: (descriptor, logicalField, ns, path) ->
     source = @source
     conf = {path, ns, logicalField, source}
-    if type = source.inferType descriptor
-      if type instanceof Promise
-        return type
-      else
-        return type.createField conf
-    return conf
+    return conf unless type = source.inferType descriptor
+    if type instanceof Promise
+      return type
+    return type.createField conf
 
 DataQuery = require './DataQuery'
 for queryMethodName, queryFn of DataQuery::
   do (queryFn) ->
     DataSchema::[queryMethodName] = (args...)->
       query = new DataQuery @
-      queryReturn = queryFn.apply query, args
-      return queryReturn
+      return queryFn.apply query, args
 
 # Used to generate DataSchema.Buffer, which is used in DataSource::schema(schemaName) to buffer up methods invoked on an instance of DataSchema that has not yet been defined
 bufferify = (Klass) ->
