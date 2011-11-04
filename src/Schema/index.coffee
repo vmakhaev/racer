@@ -176,14 +176,15 @@ Schema.static
       ns = @ns # Inherit data schema ns from logical schema
 
     if arguments.length == 3
-      if typeof ns isnt 'string'
-        # (source, fieldsConf, virtualsConf)
-        virtualsConf = fieldsConf
-        fieldsConf = ns
-        ns = @ns # Inherit data schema ns from logical schema
-      else
-        # (source, ns, fieldsConf)
-        virtualsConf = null
+      switch typeof ns
+        when 'boolean', 'string'
+          # (source, ns, fieldsConf)
+          virtualsConf = null
+        else
+          # (source, fieldsConf, virtualsConf)
+          virtualsConf = fieldsConf
+          fieldsConf = ns
+          ns = @ns # Inherit data schema ns from logical schema
 
     # else
     # (source, ns, fieldsConf, virtualsConf)

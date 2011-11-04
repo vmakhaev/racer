@@ -94,8 +94,6 @@ MongoSource = module.exports = DataSource.extend
     if type = types[descriptor.name || descriptor._name]
       return type
 
-    # console.log descriptor
-
     throw new Error "Unsupported type descriptor #{descriptor}"
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
