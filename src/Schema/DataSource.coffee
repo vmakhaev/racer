@@ -42,7 +42,7 @@ DataSource:: =
   #     type the field is.
   createDataSchema: ({name, ns, LogicalSchema: LogicalSkema}, fieldsConf) ->
     if LogicalSkema
-      ns ||= LogicalSkema.ns
+      ns ||= LogicalSkema.ns unless ns == false
       name ||= LogicalSkema._name
     else
       throw new Error 'Missing name' unless name
