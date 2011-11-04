@@ -4,7 +4,7 @@ FlowBuilder = exports.FlowBuilder = (@LogicalSkema) ->
 
 FlowBuilder:: =
   first: (sources..., callback) ->
-    if 'function' != typeof callback
+    if typeof callback isnt 'function'
       sources.push callback
       callback = null
     @flow.push [sources, callback]

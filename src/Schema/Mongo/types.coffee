@@ -24,7 +24,7 @@ exports.ObjectId = baseType.extend 'ObjectId',
   defaultTo: -> new NativeObjectId
 
   fromString: (str) ->
-    unless 'string' == typeof str && 24 == str.length
+    unless typeof str is 'string' && 24 == str.length
       throw new Error 'Invalid ObjectId'
     return NativeObjectId.createFromHexString str
 

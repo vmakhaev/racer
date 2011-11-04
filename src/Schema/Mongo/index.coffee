@@ -33,7 +33,7 @@ MongoSource = module.exports = DataSource.extend
             type = Object.create type
             type.isPkey = true
             continue
-          if 'function' == typeof type[flag]
+          if typeof type[flag] is 'function'
             if Array.isArray arg
               type[flag] arg...
             else
