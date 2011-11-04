@@ -90,6 +90,11 @@ MongoSource = module.exports = DataSource.extend
 
     throw new Error "Unsupported type descriptor #{descriptor}"
 
+  # Takes flattenedPath and traverses the object, assignTo, to the corresponding
+  # node. Then, assigns val to this node.
+  # @param {Object} assignTo
+  # @param {String} flattenedPath
+  # @param {Object} val
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
     curr      = assignTo
     parts     = flattenedPath.split '.'
@@ -103,14 +108,16 @@ MongoSource = module.exports = DataSource.extend
 
   # TODO Better lang via MongoCommandBuilder.handle 'set', (...) -> ?
   # @param {CommandSet} the current command set we're building
-  # @param {Schema} doc that generated the incoming op params
-  # @param {DataField} the data source field
-  # @param {Object} conds is the oplog op's conds
-  # @param {String} path is the oplog op's path
-  # @param {Object} val is the oplog op's val
+  # @param {Schema}     doc that generated the incoming op params
+  # @param {DataField}  the data source field
+  # @param {Object}     conds is the oplog op's conds
+  # @param {String}     path is the oplog op's path
+  # @param {Object}     val is the oplog op's val
   # TODO DRY
   set: (cmdSet, doc, dataField, conds, path, val) ->
-    if dataField.type instanceof DataSchema && cid = val.cid
+    dataType = dataField.type
+
+    if dataType instanceof DataSchema && cid = val.cid
       # Handle embedded docs
       pending = cmdSet.pendingByCid[cid] ||= []
       op = ['set'].concat Array::slice.call(arguments, 1)
@@ -155,100 +162,29 @@ MongoSource = module.exports = DataSource.extend
       cmdSet.index    matchingCmd
       cmdSet.position matchingCmd
 
-    if dataField.type._name == 'Ref'
-      {pkeyName} = dataField.type
-      if ((val instanceof Schema && val.isNew) || !(val instanceof Schema)) && cid = val.cid
-        cid = val.cid
-        dependencyCmd = cmdSet.commandsByCid[cid]
-        # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
-        cmdSet.pipe dependencyCmd, matchingCmd, (incomingCid, extraAttrs) ->
-          if incomingCid != cid
-            throw new Error "Calling back with extraAttrs specified for doc cid #{cid} when we are expecting extraAttrs specified for command associated with doc cid #{incomingCid}"
-          switch matchingCmd.method
-            when 'insert' then matchingCmd.val[path]      = extraAttrs[pkeyName]
-            when 'update' then matchingCmd.val.$set[path] = pkeyVal
-            else
-              throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
-        return cmdSet
-      if pkeyVal = val[pkeyName]
-        @set cmdSet, doc, dataField, conds, path, pkeyVal
-        return cmdSet
+    if dataType._name == 'Ref'
+      return cmdSet if dataType.handleSet matchingCmd, cmdSet, path, val
 
-    dataType = dataField.type
     if dataType._name == 'Array' && dataType.memberType._name == 'Ref'
-      {pkeyName} = dataType.memberType
+      return cmdSet if dataType.handleSet matchingCmd, cmdSet, path, val
 
-      positionCb = (prevPosFulfilledVals...) ->
-        pkeyVals = (pkeyVal for [cid, extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
-        # Re-order prevPosFulfilledVals to match order of the array ref's doc ordering
-        pkeyVals = []
-        extraAttrsByCid = {}
-        for [cid, extraAttrs] in prevPosFulfilledVals
-          extraAttrsByCid[cid] = extraAttrs
-        for {cid}, i in val
-          if pkeyVal = extraAttrsByCid[cid]?[pkeyName]
-            # Add the pkeys created by just-run insert commands
-            pkeyVals[i] = pkeyVal
-          else
-            # Add the pkeys of the docs we didn't have to create
-            [pkeyVal, j] = existingPkeyIndices.shift()
-            if i != j
-              throw new Error "Expected an existing doc's pkey at index #{i}, but the next existing doc was remembered at position #{j}"
-            pkeyVals[j] = pkeyVal
-
-        switch matchingCmd.method
-          when 'insert' then matchingCmd.val[path]      = pkeyVals
-          when 'update' then matchingCmd.val.$set[path] = pkeyVals
-          else
-            throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
-      
-      if matchingCmd.pos
-        positionMethod = null
-      else
-        positionArgs   = [matchingCmd, positionCb]
-        positionMethod = 'position'
-      existingPkeyIndices = []
-      for mem, i in val
-        if mem.isNew # If mem.cid, i.e., if the doc we're linking to is new
-          unless pos
-            pos            = cmdSet.commandsByCid[mem.cid].pos
-            positionArgs   = [pos, matchingCmd, null, positionCb]
-            positionMethod = 'placeAfterPosition'
-        else if pkeyVal = dataField.type.memberType.cast mem.get pkeyName
-          # TODO Next line does un-necessary work when there are no dependencies to create
-          existingPkeyIndices.push [pkeyVal, i]
-      
-      if positionMethod
-        cmdSet[positionMethod] positionArgs...
-      else
-        pkeyVals = (pkeyVal for [pkeyVal] in existingPkeyIndices)
-        switch matchingCmd.method
-          when 'update'
-            set = matchingCmd.val.$set ||= {}
-            set[path] = pkeyVals
-          when 'insert'
-            if -1 == path.indexOf '.'
-              matchingCmd.val[path] = pkeyVals
-            else
-              @_assignToUnflattened matchingCmd.val, path, pkeyVals
-      return cmdSet
-
-    val = dataField.cast val if dataField.cast
-
-    switch matchingCmd.method
-      when 'update'
-        set = matchingCmd.val.$set ||= {}
-        set[path] = val
-      when 'insert'
-        if -1 == path.indexOf '.'
-          matchingCmd.val[path] = val
-        else
-          @_assignToUnflattened matchingCmd.val, path, val
-      else
-        throw new Error 'Implement for other incoming method ' + matchingCmd.method
+    console.log dataType unless dataType.handleSet
+    dataType.handleSet matchingCmd, cmdSet, path, val
+#    val = dataField.cast val if dataField.cast
+#
+#    switch matchingCmd.method
+#      when 'update'
+#        set = matchingCmd.val.$set ||= {}
+#        set[path] = val
+#      when 'insert'
+#        if -1 == path.indexOf '.'
+#          matchingCmd.val[path] = val
+#        else
+#          @_assignToUnflattened matchingCmd.val, path, val
+#      else
+#        throw new Error 'Implement for other incoming method ' + matchingCmd.method
 
     return cmdSet
-
 
   del: (cmdSet, doc, dataField, conds, path) ->
     {ns} = dataField
@@ -280,9 +216,9 @@ MongoSource = module.exports = DataSource.extend
     return cmdSet
 
   push: (cmdSet, doc, dataField, conds, path, values...) ->
-    {ns} = dataField
+    {ns, type: dataType} = dataField
 
-    if dataField.type.memberType instanceof DataSchema && cid = values[0].cid
+    if dataType.memberType instanceof DataSchema && cid = values[0].cid
       for {cid} in values
         # Handle embedded arrays of docs
         pending = cmdSet.pendingByCid[cid] ||= []
@@ -303,9 +239,9 @@ MongoSource = module.exports = DataSource.extend
           if pushParam = cval.$push || cval.$pushAll
             return true if path of pushParam
 
-    if dataField.type.memberType._name == 'Object' && values[0] instanceof Schema
-      memberField = dataField.type.memberType.createField()
-      @push cmdSet, doc, ns, dataField.type.memberType, conds, path, (val._doc for val in values)
+    if dataType.memberType._name == 'Object' && values[0] instanceof Schema
+      memberField = dataType.memberType.createField()
+      @push cmdSet, doc, ns, dataType.memberType, conds, path, (val._doc for val in values)
       return cmdSet
 
     unless matchingCmd

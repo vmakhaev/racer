@@ -104,6 +104,22 @@ DataSchema:: =
       return type
     return type.createField conf
 
+  # TODO DRY - repeated in Mongo/types in baseType
+  handleSet: (cmd, cmdSet, path, val) ->
+    val = @cast val if @cast
+    switch cmd.method
+      when 'update'
+        set = cmd.val.$set ||= {}
+        set[path] = val
+      when 'insert'
+        if -1 == path.indexOf '.'
+          cmd.val[path] = val
+        else
+          @_assignToUnflattened cmd.val, path, val
+      else
+        throw new Error 'Implement for other incoming method ' + cmd.method
+    return true
+
 DataQuery = require './DataQuery'
 for queryMethodName, queryFn of DataQuery::
   do (queryFn) ->
