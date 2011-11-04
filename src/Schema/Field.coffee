@@ -44,7 +44,8 @@ Field:: =
   genDataFieldFlow: ->
     return dataFieldFlow if dataFieldFlow = @dataFieldFlow
     dataFieldFlow = []
-    dataFields = @dataFields
+    dataFields    = @dataFields
+
     if readFlow = @readFlow || @schema.readFlow
       for [sources, parallelCallback] in readFlow
         matchingDFields = (dField for dField in dataFields when -1 != sources.indexOf dField.source)
