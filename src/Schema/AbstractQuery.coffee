@@ -36,10 +36,15 @@ AbstractQuery:: =
     return @ unless callback
     return @fire callback
 
+  # Possible ways to use findOne:
   # query.findOne({id: 1}, function (err, foundDoc) { /* */});
   # query.findOne({id: 1}, {select: ['*']}, function (err, foundDoc) { /* */});
   # query.findOne(function (err, foundDoc) { /* */});
   # query.findOne({id: 1});
+  # 
+  # @param {Object} criteria
+  # @param {Object} opts
+  # @param {Function} callback
   findOne: (criteria, opts, callback) ->
     @queryMethod = 'findOne'
     if 'function' == typeof criteria
@@ -51,9 +56,7 @@ AbstractQuery:: =
         opts = null
       if criteria?.constructor == Object
         merge @_conditions, criteria
-
     @_applyOpts opts
-
     return @ unless callback
     return @fire callback
 
@@ -70,8 +73,7 @@ AbstractQuery:: =
     @_selects.push paths...
     return @
 
-  castConditions: ->
-    return @schema.castObj @_conditions
+  castConditions: -> return @schema.castObj @_conditions
 
   # Binds this query to a CustomSchema
   bind: (schema) ->
