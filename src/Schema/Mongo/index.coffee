@@ -170,19 +170,6 @@ MongoSource = module.exports = DataSource.extend
 
     console.log dataType unless dataType.handleSet
     dataType.handleSet matchingCmd, cmdSet, path, val
-#    val = dataField.cast val if dataField.cast
-#
-#    switch matchingCmd.method
-#      when 'update'
-#        set = matchingCmd.val.$set ||= {}
-#        set[path] = val
-#      when 'insert'
-#        if -1 == path.indexOf '.'
-#          matchingCmd.val[path] = val
-#        else
-#          @_assignToUnflattened matchingCmd.val, path, val
-#      else
-#        throw new Error 'Implement for other incoming method ' + matchingCmd.method
 
     return cmdSet
 
