@@ -30,8 +30,7 @@ MongoSource = module.exports = DataSource.extend
         delete descriptor.$type
         for flag, arg of descriptor
           if flag == '$pkey'
-            type = Object.create type
-            type.isPkey = true
+            type = Object.create type, isPkey: value: true
             continue
           if typeof type[flag] is 'function'
             if Array.isArray arg
@@ -46,11 +45,10 @@ MongoSource = module.exports = DataSource.extend
       if foreignDataField = descriptor.$pointsTo
         {source, path, type: ftype} = foreignDataField
         if ftype.isPkey # If this field is a ref
-          concreteRefType = Object.create source.types.Ref
-          concreteRefType.pkeyType = ftype
-          concreteRefType.pkeyName = path
-          concreteRefType.pointsToField = foreignDataField
-          return concreteRefType
+          return Object.create source.types.Ref,
+            pkeyType:      { value: ftype }
+            pkeyName:      { value: path  }
+            pointsToField: { value: foreignDataField }
         else
           throw new Error 'Ensure that that you are pointing to a pkey'
         # if array ref
@@ -58,10 +56,8 @@ MongoSource = module.exports = DataSource.extend
         # if inverse array ref
 
     if Array.isArray descriptor
-      arrayType = types['Array']
-      concreteArrayType = Object.create arrayType
-      concreteArrayType.memberType = @inferType descriptor[0]
-      return concreteArrayType
+      return Object.create types.Array,
+        memberType: value: @inferType descriptor[0]
 
     if descriptor instanceof DataSchema
       return descriptor
@@ -74,10 +70,8 @@ MongoSource = module.exports = DataSource.extend
         conds[path] = (doc) -> doc[targetPath]
       # TODO Implement these as Data-level Virtual Types?
       type = switch query.queryMethod
-        when 'findOne'
-          types.OneInverse
-        when 'find'
-          types.ManyInverse
+        when 'findOne' then types.OneInverse
+        when 'find'    then types.ManyInverse
       type = Object.create type
       type._baseQuery = query
       type.get = (doc) ->
@@ -97,8 +91,8 @@ MongoSource = module.exports = DataSource.extend
     throw new Error "Unsupported type descriptor #{descriptor}"
 
   _assignToUnflattened: (assignTo, flattenedPath, val) ->
-    parts = flattenedPath.split '.'
-    curr = assignTo
+    curr      = assignTo
+    parts     = flattenedPath.split '.'
     lastIndex = parts.length - 1
     for part, i in parts
       if i == lastIndex
@@ -126,8 +120,7 @@ MongoSource = module.exports = DataSource.extend
     # If prior pending ops are expecting a document with cid
     if (cid = doc.cid) && (pending = cmdSet.pendingByCid[cid])
       delete cmdSet.pendingByCid[cid]
-      newVal = {}
-      newVal[path] = val
+      (newVal = {})[path] = val
       for [method, pendingDoc, pendingDataField, pendingConds, pendingPath, pendingVal] in pending
         @[method] cmdSet, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
       return cmdSet
@@ -154,13 +147,12 @@ MongoSource = module.exports = DataSource.extend
           # We want to keep around pending for any future ops that are grounded in cid
           # , so we don't delete cmdSet.pendingByCid[cid]
           return cmdSet
-      matchingCmd = new Command @, ns, conds, doc
-      matchingCmd.val = {}
-      if conds.__cid__
-        matchingCmd.method = 'insert'
-      else
-        matchingCmd.method = 'update'
-      cmdSet.index matchingCmd
+
+      matchingCmd        = new Command @, ns, conds, doc
+      matchingCmd.val    = {}
+      matchingCmd.method = if conds.__cid__ then 'insert' else 'update'
+
+      cmdSet.index    matchingCmd
       cmdSet.position matchingCmd
 
     if dataField.type._name == 'Ref'
@@ -173,10 +165,8 @@ MongoSource = module.exports = DataSource.extend
           if incomingCid != cid
             throw new Error "Calling back with extraAttrs specified for doc cid #{cid} when we are expecting extraAttrs specified for command associated with doc cid #{incomingCid}"
           switch matchingCmd.method
-            when 'insert'
-              matchingCmd.val[path] = extraAttrs[pkeyName]
-            when 'update'
-              matchingCmd.val.$set[path] = pkeyVal
+            when 'insert' then matchingCmd.val[path]      = extraAttrs[pkeyName]
+            when 'update' then matchingCmd.val.$set[path] = pkeyVal
             else
               throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
         return cmdSet
@@ -184,11 +174,11 @@ MongoSource = module.exports = DataSource.extend
         @set cmdSet, doc, dataField, conds, path, pkeyVal
         return cmdSet
 
-    if dataField.type._name == 'Array' && dataField.type.memberType._name == 'Ref'
-      {pkeyName} = dataField.type.memberType
+    dataType = dataField.type
+    if dataType._name == 'Array' && dataType.memberType._name == 'Ref'
+      {pkeyName} = dataType.memberType
 
       positionCb = (prevPosFulfilledVals...) ->
-
         pkeyVals = (pkeyVal for [cid, extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
         # Re-order prevPosFulfilledVals to match order of the array ref's doc ordering
         pkeyVals = []
@@ -207,25 +197,23 @@ MongoSource = module.exports = DataSource.extend
             pkeyVals[j] = pkeyVal
 
         switch matchingCmd.method
-          when 'insert'
-            matchingCmd.val[path] = pkeyVals
-          when 'update'
-            matchingCmd.val.$set[path] = pkeyVals
+          when 'insert' then matchingCmd.val[path]      = pkeyVals
+          when 'update' then matchingCmd.val.$set[path] = pkeyVals
           else
             throw new Error "Command method #{matchingCmd.method} isn't supported in this context"
       
       if matchingCmd.pos
         positionMethod = null
       else
+        positionArgs   = [matchingCmd, positionCb]
         positionMethod = 'position'
-        positionArgs = [matchingCmd, positionCb]
       existingPkeyIndices = []
       for mem, i in val
         if mem.isNew # If mem.cid, i.e., if the doc we're linking to is new
           unless pos
+            pos            = cmdSet.commandsByCid[mem.cid].pos
+            positionArgs   = [pos, matchingCmd, null, positionCb]
             positionMethod = 'placeAfterPosition'
-            pos = cmdSet.commandsByCid[mem.cid].pos
-            positionArgs = [pos, matchingCmd, null, positionCb]
         else if pkeyVal = dataField.type.memberType.cast mem.get pkeyName
           # TODO Next line does un-necessary work when there are no dependencies to create
           existingPkeyIndices.push [pkeyVal, i]
@@ -274,12 +262,12 @@ MongoSource = module.exports = DataSource.extend
       return false
 
     unless matchingCmd
-      matchingCmd = new Command @, ns, conds, doc
-      matchingCmd.method = 'update'
       (unset = {})[path] = 1
-      matchingCmd.val = $unset: unset
+      matchingCmd        = new Command @, ns, conds, doc
+      matchingCmd.method = 'update'
+      matchingCmd.val    = $unset: unset
 
-      cmdSet.index matchingCmd
+      cmdSet.index    matchingCmd
       cmdSet.position matchingCmd
 
       return cmdSet
@@ -327,17 +315,14 @@ MongoSource = module.exports = DataSource.extend
         (matchingCmd.val = {})[path] = values
       else
         matchingCmd.method = 'update'
-        if values.length == 1
-          val = values[0]
-          k = '$push'
-        else if values.length > 1
-          val = values
-          k = '$pushAll'
+        len = values.length
+        if      len == 1 then val = values[0]; k = '$push'
+        else if len > 1  then val = values   ; k = '$pushAll'
         else
           throw new Error 'length of 0! Uh oh!'
         (args = {})[path] = val
         (matchingCmd.val ||= {})[k] = args
-      cmdSet.index matchingCmd
+      cmdSet.index    matchingCmd
       cmdSet.position matchingCmd
       return cmdSet
 
