@@ -26,7 +26,7 @@ MongoAdapter:: =
   __proto__: EventEmitter::
 
   _loadConf: (conf) ->
-    if typeof conf == 'string'
+    if typeof conf is 'string'
       uri = url.parse conf
       @_host = uri.hostname
       @_port = uri.port || 27017
@@ -37,7 +37,7 @@ MongoAdapter:: =
       {@_host, @_port, @_database, @_user, @_pass} = conf
 
   connect: (conf, callback) ->
-    if 'function' == typeof conf
+    if typeof conf is 'function'
       callback = conf
     else
       @_loadConf conf

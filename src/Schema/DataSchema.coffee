@@ -67,7 +67,7 @@ DataSchema:: =
       continue if fieldName == '_id' || defaultTo is undefined
       val = document.get fieldName
       if val is undefined
-        defaultTo = defaultTo val if 'function' == typeof defaultTo
+        defaultTo = defaultTo val if typeof defaultTo is 'function'
         # TODO Ensure fieldName is part of logical schema AND data source schema; not part of data source schema but not logical schema
         document.set fieldName, defaultTo
 
@@ -110,7 +110,7 @@ DataQuery = require './DataQuery'
 for queryMethodName, queryFn of DataQuery::
   do (queryFn) ->
     DataSchema::[queryMethodName] = (args...)->
-      query = (new DataQuery).bind @
+      query = new DataQuery @
       queryReturn = queryFn.apply query, args
       return queryReturn
 
