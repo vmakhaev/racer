@@ -19,9 +19,9 @@
 Field = require './Field'
 
 Type = module.exports = (name, config) ->
-  @_setups = []
+  @_name       = name
+  @_setups     = []
   @_validators = []
-  @_name = name
 
   for method, arg of config
     if method == 'cast'
@@ -58,8 +58,8 @@ Type:: =
   validate: (val) ->
     validators = @_validators
     errors = (err for fn in validators when (err = fn val) != true)
-    if @parentType
-      parentErrors = @parentType.validate val
+    if parentType = @parentType
+      parentErrors = parentType.validate val
       unless true == parentErrors
         errors = errors.concat parentErrors
     return if errors.length then errors else true

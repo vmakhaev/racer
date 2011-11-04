@@ -1,6 +1,5 @@
 {merge} = require '../util'
 
-
 DataField = module.exports = (@type, opts) ->
   merge @, opts
   return

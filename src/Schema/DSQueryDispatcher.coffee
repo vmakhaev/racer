@@ -9,8 +9,7 @@ DSQueryDispatcher = module.exports = (@_queryMethod) ->
 
 DSQueryDispatcher:: =
   _didNotFind: ([metas, dataField]) ->
-    return true if metas is undefined
-    return true unless metas.length
+    return true if metas is undefined || !metas.length
     for {val} in metas
       return true unless val?
     return false
@@ -18,18 +17,20 @@ DSQueryDispatcher:: =
 
   registerLogicalField: (logicalField, conds) ->
     unless logicalField.dataFields.length
-      console.warn "`#{logicalField.path}` is a declared logical field of schema `#{logicalField.schema._name}, but does not correspond to any data schema component. Please add it to one of your data schemas."
+      console.warn """`#{logicalField.path}` is a declared logical field of
+        schema `#{logicalField.schema._name}, but does not correspond to any
+        data schema component. Please add it to one of your data schemas."""
       return
 
     self = this
-    queryMethod = @_queryMethod
-    @_logicalFieldsPromises.push lFieldPromise = new Promise
-    dataFieldFlow = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
-    lastPhase = dataFieldFlow.length - 1
-    fieldHandler = @['_' + queryMethod + 'FieldHandler']
-    # Promise for the future fetched data field value
-    dFieldPromCb = (err, val, dataField) -> fieldHandler err, val, dataField, lFieldPromise
+    queryMethod        = @_queryMethod
+    dataFieldFlow      = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
+    lastPhase          = dataFieldFlow.length - 1
+    fieldHandler       = @['_' + queryMethod + 'FieldHandler']
+    lFieldPromise      = new Promise # Promise for the future fetched data field value
     noneFoundPredicate = if queryMethod == 'find' then @_didNotFind else @_didNotFindOne
+    dFieldPromCb       = (err, val, dataField) -> fieldHandler err, val, dataField, lFieldPromise
+    @_logicalFieldsPromises.push lFieldPromise
     for [dataFields, parallelCallback], phase in dataFieldFlow
 #      if dataFields[0].dependsOn
 #        # TODO

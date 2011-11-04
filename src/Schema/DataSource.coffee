@@ -46,7 +46,7 @@ DataSource:: =
       name ||= LogicalSkema._name
     else
       throw new Error 'Missing name' unless name
-      throw new Error 'Missing ns' unless ns == false || typeof ns is 'string'
+      throw new Error 'Missing ns'   unless ns == false || typeof ns is 'string'
     ds = @[name] = new DataSchema @, name, ns, LogicalSkema, fieldsConf
     if ns
       @dataSchemasWithNs[ns] = ds
@@ -57,8 +57,7 @@ DataSource:: =
     return promise if promise = @_schemaPromises[schemaName]
     promise = @_schemaPromises[schemaName] = new Promise
     bufferingDataSchema = new DataSchema.Buffer
-    promise.callback (schema) ->
-      bufferingDataSchema.flush schema
+    promise.callback (schema) -> bufferingDataSchema.flush schema
     return bufferingDataSchema
 
 DataSource.extend = (config) ->
