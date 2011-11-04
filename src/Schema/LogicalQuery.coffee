@@ -12,7 +12,7 @@ LogicalQuery:: = merge new AbstractQuery(),
   # data sources; then, collects and re-assembles the data into the
   # logical document and passes it to callback(err, doc)
   fire: (fireCallback) ->
-    conds = @castConditions() # Logical schema casting of the query condition vals
+    conds = @_castConditions() # Logical schema casting of the query condition vals
     RootLogicalSkema = @schema
     # Conditions and fields to select will determine the async flow path
     # through (data source, namespace) nodes. Conditions may be for fields
@@ -26,7 +26,7 @@ LogicalQuery:: = merge new AbstractQuery(),
     if selects.length
       # In a select, fields could be deeply nested fields that belong to another Logical Schema
       # than the RootLogicalSkema firing this query.
-      # TODO Add this kind of logic to @castConditions
+      # TODO Add this kind of logic to @_castConditions
       logicalFields = (RootLogicalSkema.lookupField path for path in selects)
     else
       logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
