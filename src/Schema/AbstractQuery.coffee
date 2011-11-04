@@ -2,7 +2,7 @@
 Promise = require '../Promise'
 {deepCopy} = require '../util'
 
-AbstractQuery = module.exports = (criteria) ->
+AbstractQuery = module.exports = (@schema, criteria) ->
   @_conditions = {}
   @_selects = []
   @find criteria if criteria
@@ -21,20 +21,18 @@ AbstractQuery:: =
 
   find: (criteria, opts, callback) ->
     @queryMethod = 'find'
-    if 'function' == typeof criteria
+    if typeof criteria is 'function'
       callback = criteria
       criteria = null
     else
-      if 'function' == typeof opts
+      if typeof opts is 'function'
         callback = opts
         opts = null
       if criteria?.constructor == Object
         merge @_conditions, criteria
-    
     @_applyOpts opts
-
-    return @ unless callback
-    return @fire callback
+    return @fire callback if callback
+    return @
 
   # Possible ways to use findOne:
   # query.findOne({id: 1}, function (err, foundDoc) { /* */});
@@ -47,36 +45,29 @@ AbstractQuery:: =
   # @param {Function} callback
   findOne: (criteria, opts, callback) ->
     @queryMethod = 'findOne'
-    if 'function' == typeof criteria
+    if typeof criteria is 'function'
       callback = criteria
       criteria = null
     else
-      if 'function' == typeof opts
+      if typeof opts is 'function'
         callback = opts
         opts = null
       if criteria?.constructor == Object
         merge @_conditions, criteria
     @_applyOpts opts
-    return @ unless callback
-    return @fire callback
+    return @fire callback if callback
+    return @
 
   _applyOpts: (opts) ->
-    if opts
-      for k, v of opts
-        if Array.isArray v
-          @[k] v...
-        else
-          @[k] v
+    if opts then for k, v of opts
+      if Array.isArray v
+        @[k] v...
+      else
+        @[k] v
 
   # @param {[String]} paths
   select: (paths...) ->
     @_selects.push paths...
     return @
 
-  castConditions: -> return @schema.castObj @_conditions
-
-  # Binds this query to a CustomSchema
-  bind: (schema) ->
-    boundQuery = Object.create @
-    boundQuery.schema = schema
-    return boundQuery
+  _castConditions: -> return @schema.castObj @_conditions

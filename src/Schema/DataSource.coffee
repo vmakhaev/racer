@@ -26,7 +26,7 @@ DataSource:: =
   #       _id: mongo.pkey(ObjectId)
   #     });
   pkey: (fieldNameOrType) ->
-    if 'string' == typeof fieldNameOrType
+    if typeof fieldNameOrType is 'string'
       return @_pkeyField = fieldNameOrType
     return {
       $type: fieldNameOrType
@@ -46,7 +46,7 @@ DataSource:: =
       name ||= LogicalSkema._name
     else
       throw new Error 'Missing name' unless name
-      throw new Error 'Missing ns' unless ns == false || 'string' == typeof ns
+      throw new Error 'Missing ns' unless ns == false || typeof ns is 'string'
     ds = @[name] = new DataSchema @, name, ns, LogicalSkema, fieldsConf
     if ns
       @dataSchemasWithNs[ns] = ds

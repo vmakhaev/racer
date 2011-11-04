@@ -282,9 +282,8 @@ LogicalQuery = require './LogicalQuery'
 for queryMethodName, queryFn of LogicalQuery::
   do (queryFn) ->
     Schema.static queryMethodName, (args...)->
-      query = (new LogicalQuery).bind @
-      queryReturn = queryFn.apply query, args
-      return queryReturn
+      query = new LogicalQuery @
+      return queryFn.apply query, args
 
 Schema:: = EventEmitter::
 Schema::constructor = Schema
@@ -305,9 +304,8 @@ merge Schema::,
     throw new Error "Either `#{name}` isn't a field of `#{_name}`, or `#{val}` is not an Object"
 
   atomic: ->
-    obj = Object.create @
-    obj._atomic = true
-    return obj
+    return Object.create @,
+      _atomic: value: true
 
   set: (attr, val, callback) ->
     oplogIndex = @oplog.length
@@ -321,31 +319,29 @@ merge Schema::,
         setTo = _id: fkey
       else
         setTo = cid: val.cid
-      @oplog.splice oplogIndex, 0, [@, @constructor.ns, conds, 'set', attr, setTo]
+      op = [@, @constructor.ns, conds, 'set', attr, setTo]
+      @oplog.splice oplogIndex, 0, op
       # Leaving off a val means assign this attr to the
       # document represented in the next op
     else
       @oplog.push [@, @constructor.ns, conds, 'set', attr, val]
     # Otherwise this operation is stored in val's oplog, since val is a Schema document
-    if @_atomic
-      @save callback
+    if @_atomic then @save callback
     return @
 
   # Get from in-memory local @_doc
   # TODO Leverage defineProperty or Proxy.create server-side
-  get: (attr) ->
-    return @_doc[attr]
+  get: (attr) -> return @_doc[attr]
 
   del: (attr, callback) ->
-    conds = {_id} if _id = @_doc._id
+    if _id = @_doc._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'del', attr]
-    if @_atomic
-      @save callback
+    if @_atomic then @save callback
     return @
 
   # self-destruct
   destroy: (callback) ->
-    conds = {_id} if _id = @_doc._id
+    if _id = @_doc._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'destroy']
     Schema.applyOps oplog, callback
 
