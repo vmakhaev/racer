@@ -12,6 +12,37 @@ baseType =
     merge extType, conf
     return extType
 
+  handleSet: (cmd, cmdSet, path, val) ->
+    val = @cast val if @cast
+    switch cmd.method
+      when 'update'
+        set = cmd.val.$set ||= {}
+        set[path] = val
+      when 'insert'
+        if -1 == path.indexOf '.'
+          cmd.val[path] = val
+        else
+          @_assignToUnflattened cmd.val, path, val
+      else
+        throw new Error 'Implement for other incoming method ' + cmd.method
+    return true
+
+  # Takes flattenedPath and traverses the object, assignTo, to the corresponding
+  # node. Then, assigns val to this node.
+  # @param {Object} assignTo
+  # @param {String} flattenedPath
+  # @param {Object} val
+  _assignToUnflattened: (assignTo, flattenedPath, val) ->
+    curr      = assignTo
+    parts     = flattenedPath.split '.'
+    lastIndex = parts.length - 1
+    for part, i in parts
+      if i == lastIndex
+        curr[part] = val
+      else
+        curr = curr[part] ||= {}
+    return curr
+
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId = baseType.extend 'ObjectId',
   cast: (val) ->
@@ -75,6 +106,64 @@ exports.Array = baseType.extend 'Array',
               --remaining || derefProm.fulfill arr
         return derefProm
     return field
+  
+  handleSet: (cmd, cmdSet, path, val) ->
+    {pkeyName} = @memberType
+
+    positionCb = (prevPosFulfilledVals...) ->
+      pkeyVals = (pkeyVal for [cid, extraAttrs] in prevPosFulfilledVals when pkeyVal = extraAttrs[pkeyName])
+      # Re-order prevPosFulfilledVals to match order of the array ref's doc ordering
+      pkeyVals = []
+      extraAttrsByCid = {}
+      for [cid, extraAttrs] in prevPosFulfilledVals
+        extraAttrsByCid[cid] = extraAttrs
+      for {cid}, i in val
+        if pkeyVal = extraAttrsByCid[cid]?[pkeyName]
+          # Add the pkeys created by just-run insert commands
+          pkeyVals[i] = pkeyVal
+        else
+          # Add the pkeys of the docs we didn't have to create
+          [pkeyVal, j] = existingPkeyIndices.shift()
+          if i != j
+            throw new Error "Expected an existing doc's pkey at index #{i}, but the next existing doc was remembered at position #{j}"
+          pkeyVals[j] = pkeyVal
+
+      switch cmd.method
+        when 'insert' then cmd.val[path]      = pkeyVals
+        when 'update' then cmd.val.$set[path] = pkeyVals
+        else
+          throw new Error "Command method #{cmd.method} isn't supported in this context"
+    
+    if cmd.pos
+      positionMethod = null
+    else
+      positionArgs   = [cmd, positionCb]
+      positionMethod = 'position'
+    existingPkeyIndices = []
+    for mem, i in val
+      if mem.isNew # If mem.cid, i.e., if the doc we're linking to is new
+        unless pos
+          pos            = cmdSet.commandsByCid[mem.cid].pos
+          positionArgs   = [pos, cmd, null, positionCb]
+          positionMethod = 'placeAfterPosition'
+      else if pkeyVal = @memberType.cast mem.get pkeyName
+        # TODO Next line does un-necessary work when there are no dependencies to create
+        existingPkeyIndices.push [pkeyVal, i]
+    
+    if positionMethod
+      cmdSet[positionMethod] positionArgs...
+    else
+      pkeyVals = (pkeyVal for [pkeyVal] in existingPkeyIndices)
+      switch cmd.method
+        when 'update'
+          set = cmd.val.$set ||= {}
+          set[path] = pkeyVals
+        when 'insert'
+          if -1 == path.indexOf '.'
+            cmd.val[path] = pkeyVals
+          else
+            @_assignToUnflattened cmd.val, path, pkeyVals
+    return true
 
 exports.Ref = baseType.extend 'Ref',
   cast: (val) ->
@@ -89,6 +178,29 @@ exports.Ref = baseType.extend 'Ref',
       # Change null to explicit fields
       return source.dataSchemasWithNs[ns].findOne conds, null, callback
     return field
+
+  handleSet: (cmd, cmdSet, path, val) ->
+    pkeyName = @pkeyName
+    if ((val instanceof Schema && val.isNew) || !(val instanceof Schema)) && cid = val.cid
+      dependencyCmd = cmdSet.commandsByCid[cid]
+      # cmdSet.pipe targetCommand.extraAttr(pkeyName), cmd.setAs(path)
+      cmdSet.pipe dependencyCmd, cmd, (incomingCid, extraAttrs) ->
+        if incomingCid != cid
+          throw new Error "Calling back with extraAttrs specified for doc cid #{cid}
+            when we are expecting extraAttrs specified for command associated with
+            doc cid #{incomingCid}"
+        pkeyVal = extraAttrs[pkeyName]
+        switch cmd.method
+          when 'insert' then cmd.val[path]      = pkeyVal
+          when 'update' then cmd.val.$set[path] = pkeyVal
+          else
+            throw new Error "Command method #{cmd.method} isn't supported in this context"
+      return true
+    if pkeyVal = val[pkeyName]
+      # TODO What if pkey is not supposed to be an ObjectId
+      exports.ObjectId.handleSet cmd, cmdSet, path, pkeyVal
+      return true
+    return false
 
 for type in ['String', 'Number']
   exports[type] = baseType.extend type, {}

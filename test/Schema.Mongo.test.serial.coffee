@@ -503,7 +503,7 @@ module.exports =
     , oplog
 
   '''should record a relation as an ObjectId when assigned to an already
-  persisted Schema documents''': (done) ->
+  persisted Schema documents @single''': (done) ->
     oplog = []
     User.create name: 'the clown', (err, createdAuthor) ->
       should.equal null, err
