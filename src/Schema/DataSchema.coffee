@@ -1,42 +1,45 @@
 Promise = require '../Promise'
 DataField = require './DataField'
+{merge} = require '../util'
 
-DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, logicalPathToDataPath = {}) ->
+DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, virtualsConf) ->
   unless @ns = ns
     # Disable find, findOne if missing a namespace
     @find = @findOne = null
 
-  # Indexes for converting between logical and data schema
-  # path names
-  @logicalPathToDataPath = logicalPathToDataPath
-  dataPathToLogicalPath = @dataPathToLogicalPath = {}
-  for k, v of logicalPathToDataPath
-    dataPathToLogicalPath[v] = k
-
   # Compile the fields
+  bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
+    fields[fieldName] = dataField
+    if LogicalSkema
+      # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
+      LogicalSkema.fields[logicalPath].dataFields.push dataField
   fields = @fields = {}
+  self = this
   for fieldName, descriptor of conf
     # Add field to the data schema
-    logicalPath  = dataPathToLogicalPath[fieldName] || fieldName
+    logicalPath  = fieldName
     logicalField = LogicalSkema?.fields[logicalPath]
-    dataField    = @_createFieldFrom descriptor, logicalField, ns, fieldName
-
-    bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
-      fields[fieldName] = dataField
-      if LogicalSkema
-        # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
-        LogicalSkema.fields[logicalPath].dataFields.push dataField
-
-    if dataField instanceof Promise
-      source = @source
-      do (fieldName, logicalPath, dataField) ->
-        dataField.callback (DataSkema) ->
-          conf = {path: fieldName, ns, logicalField, source}
-          dataField = DataSkema.createField conf
+    if descriptor instanceof DataSchema.Buffer
+      do (descriptor, fieldName, logicalPath, logicalField) ->
+        descriptor.onFlush = (bufferedDescriptor, DataSkema) ->
+          dataField = self._createFieldFrom bufferedDescriptor, ns, fieldName, logicalField
           bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
-    else
-      bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
+      continue
+    dataField = @_createFieldFrom descriptor, ns, fieldName, logicalField
+    bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
 
+  if virtualsConf
+    for fieldName, descriptor of virtualsConf
+      logicalPath = fieldName
+      logicalField = LogicalSkema?.fields[logicalPath]
+      if descriptor instanceof DataSchema.Buffer
+        do (descriptor, fieldName, logicalPath, logicalField) ->
+          descriptor.onFlush = (bufferedDescriptor, DataSkema) ->
+            virtualField = self._createVirtualFrom bufferedDescriptor, ns, fieldName, logicalField
+            bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
+        continue
+      virtualField = @_createVirtualFrom descriptor, ns, fieldName, logicalField
+      bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
   return
 
 DataSchema:: =
@@ -91,21 +94,34 @@ DataSchema:: =
   # TODO addDataField ?
 
   # @param {Object} descriptor
-  # @param {Field} logicalField
   # @param {String|False} ns is the namespace relative to the data source (as
   #     opposed to the logical source schema). `false` means that this is to 
   #     be used for embedded docs
   # @param {String} path
-  _createFieldFrom: (descriptor, logicalField, ns, path) ->
+  # @param {Field|undefined} logicalField
+  _createFieldFrom: (descriptor, ns, path, logicalField) ->
     source = @source
     conf = {path, ns, logicalField, source}
     return conf unless type = source.inferType descriptor
-    if type instanceof Promise
-      return type
     return type.createField conf
 
+  _createVirtualFrom: (descriptor, ns, path, logicalField) ->
+    source = @source
+    {typeParams, fieldParams} = source.virtualParams descriptor
+    virtualType = @types.baseType.extend 'Virtual', typeParams
+    fieldParams = merge {path, ns, logicalField, source}, fieldParams
+    return virtualType.createField fieldParams
+
+  maybeDeferTranslateSet: (cmdSet, doc, dataField, conds, path, val) ->
+    return false unless cid = val.cid
+    # Handle embedded docs
+    pending = cmdSet.pendingByCid[cid] ||= []
+    op = ['set'].concat Array::slice.call(arguments, 1)
+    pending.push op
+    return true
+
   # TODO DRY - repeated in Mongo/types in baseType
-  handleSet: (cmd, cmdSet, path, val) ->
+  translateSet: (cmd, cmdSet, path, val) ->
     val = @cast val if @cast
     switch cmd.method
       when 'update'
@@ -122,7 +138,8 @@ DataSchema:: =
 
 DataQuery = require './DataQuery'
 for queryMethodName, queryFn of DataQuery::
-  do (queryFn) ->
+  continue unless typeof queryFn is 'function'
+  do (queryMethodName, queryFn) ->
     DataSchema::[queryMethodName] = (args...)->
       query = new DataQuery @
       return queryFn.apply query, args
@@ -135,16 +152,58 @@ bufferify = (Klass) ->
   buffer = []
   for k, v of klassProto
     continue unless typeof v is 'function'
-    do (v) ->
+    do (k) ->
       bufferKlassProto[k] = (args...) ->
-        buffer.push [v, args]
+        buffer.push [k, args]
         return @
   if 'flush' of klassProto && typeof klassProto.flush is 'function'
     throw new Error 'Trying to over-write method `flush`'
   bufferKlassProto.flush = (klassInstance) ->
-    for [fn, args] in buffer
-      fn.apply klassInstance, args
-    return
+    val = klassInstance
+    for [method, args], i in buffer
+      val = val[method] args...
+    @onFlush val, klassInstance
   return BufferKlass
 
 DataSchema.Buffer = bufferify DataSchema
+
+DataSchema::types =
+  baseType:
+    createField: (opts) -> new DataField @, opts
+
+    extend: (name, conf) ->
+      extType = Object.create @
+      extType._name = name
+      merge extType, conf
+      return extType
+
+    translateSet: (cmd, cmdSet, path, val) ->
+      val = @cast val if @cast
+      switch cmd.method
+        when 'update'
+          set = cmd.val.$set ||= {}
+          set[path] = val
+        when 'insert'
+          if -1 == path.indexOf '.'
+            cmd.val[path] = val
+          else
+            @_assignToUnflattened cmd.val, path, val
+        else
+          throw new Error 'Implement for other incoming method ' + cmd.method
+      return true
+
+    # Takes flattenedPath and traverses the object, assignTo, to the corresponding
+    # node. Then, assigns val to this node.
+    # @param {Object} assignTo
+    # @param {String} flattenedPath
+    # @param {Object} val
+    _assignToUnflattened: (assignTo, flattenedPath, val) ->
+      curr      = assignTo
+      parts     = flattenedPath.split '.'
+      lastIndex = parts.length - 1
+      for part, i in parts
+        if i == lastIndex
+          curr[part] = val
+        else
+          curr = curr[part] ||= {}
+      return curr

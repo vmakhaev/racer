@@ -62,16 +62,35 @@ MongoSource = module.exports = DataSource.extend
     if descriptor instanceof DataSchema
       return descriptor
 
+    if type = types[descriptor.name || descriptor._name]
+      return type
+
+    throw new Error "Unsupported type descriptor #{descriptor}"
+
+  # Returns the parameters used to initialize a Virtual type instances
+  # based on the meaning of the descriptor.
+  virtualParams: (descriptor) ->
+    # Descriptor for inverse of Ref or [Ref]
+    # User.createDataSchema(mongo, {
+    #   profiles: mongo.Profile.find().where('userId', '@user.id')
+    # });
     if descriptor instanceof DataQuery
       query = descriptor
+      DataSkema = query.schema
       conds = query._conditions
       for path, toEval of conds
         [_, targetPath] = toEval.split '.'
         conds[path] = (doc) -> doc[targetPath]
-      # TODO Implement these as Data-level Virtual Types?
-      type = switch query.queryMethod
+#      type = switch query.queryMethod
+      return switch query.queryMethod
         when 'findOne' then types.OneInverse
-        when 'find'    then types.ManyInverse
+#        when 'find'    then types.ManyInverse
+        when 'find' then {
+          typeParams:
+            shouldIgnoreSet: true
+          fieldParams:
+            ns: DataSkema.ns
+        }
       type = Object.create type
       type._baseQuery = query
       type.get = (doc) ->
@@ -81,14 +100,6 @@ MongoSource = module.exports = DataSource.extend
           conds[path] = conds[path](@)
           return query.fire()
       return type
-
-    if descriptor instanceof Promise
-      return descriptor
-
-    if type = types[descriptor.name || descriptor._name]
-      return type
-
-    throw new Error "Unsupported type descriptor #{descriptor}"
 
   # Takes flattenedPath and traverses the object, assignTo, to the corresponding
   # node. Then, assigns val to this node.
@@ -113,15 +124,13 @@ MongoSource = module.exports = DataSource.extend
   # @param {Object}     conds is the oplog op's conds
   # @param {String}     path is the oplog op's path
   # @param {Object}     val is the oplog op's val
-  # TODO DRY
   set: (cmdSet, doc, dataField, conds, path, val) ->
     dataType = dataField.type
 
-    if dataType instanceof DataSchema && cid = val.cid
-      # Handle embedded docs
-      pending = cmdSet.pendingByCid[cid] ||= []
-      op = ['set'].concat Array::slice.call(arguments, 1)
-      pending.push op
+    return cmdSet if dataType.shouldIgnoreSet
+
+    # if dataType instanceof DataSchema && cid = val.cid
+    if didDefer = dataType.maybeDeferTranslateSet?(cmdSet, doc, dataField, conds, path, val)
       return cmdSet
 
     # If prior pending ops are expecting a document with cid
@@ -134,7 +143,7 @@ MongoSource = module.exports = DataSource.extend
 
     {ns} = dataField
 
-    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
+    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
       {method: cmethod, val: cval} = cmd
       switch cmethod
         when 'insert' then return true
@@ -162,21 +171,15 @@ MongoSource = module.exports = DataSource.extend
       cmdSet.index    matchingCmd
       cmdSet.position matchingCmd
 
-    if dataType._name == 'Ref'
-      return cmdSet if dataType.handleSet matchingCmd, cmdSet, path, val
-
-    if dataType._name == 'Array' && dataType.memberType._name == 'Ref'
-      return cmdSet if dataType.handleSet matchingCmd, cmdSet, path, val
-
-    console.log dataType unless dataType.handleSet
-    dataType.handleSet matchingCmd, cmdSet, path, val
-
+    unless dataType.translateSet
+      throw new Error "Data type '#{dataType._name}' does not have method `translateSet`"
+    dataType.translateSet matchingCmd, cmdSet, path, val
     return cmdSet
 
   del: (cmdSet, doc, dataField, conds, path) ->
     {ns} = dataField
 
-    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
+    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
       if cmd.method == 'update'
         $atomics = Object.keys cmd.val
         if $atomics.length > 1
@@ -215,7 +218,7 @@ MongoSource = module.exports = DataSource.extend
 
     values = dataField.cast values if dataField?.cast
 
-    matchingCmd = cmdSet.findCommand ns, conds, (cmd) ->
+    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
       {method: cmethod, val: cval} = cmd
       switch cmethod
         when 'insert' then return true
