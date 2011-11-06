@@ -11,7 +11,12 @@ Schema = require './index'
 Field = module.exports = (@type) ->
   @validators = []
   @dataFields = []
-  @isRelationship = @type?.prototype instanceof Schema || (@type.memberType?.prototype instanceof Schema)
+  @isRelationship = @type?.prototype instanceof Schema || (
+    @type._name == 'Array' && (
+      !@type.memberType || # If Array of to-be-defined Schema
+      (@type.memberType.prototype instanceof Schema)
+    )
+  )
   return
 
 Field:: =

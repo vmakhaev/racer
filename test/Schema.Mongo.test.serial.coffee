@@ -70,7 +70,7 @@ module.exports =
     #  friendIds: [mongo.User.field '_id']
     #  groupId: mongo.schema(Group)._id
     ,
-      tweets: mongo.schema('Tweet').where('author', '@user._id')
+      tweets: mongo.schema('Tweet').find().where('author', '@user._id')
     #  friends: User.friendIds
 
     # # Alt A
@@ -99,6 +99,7 @@ module.exports =
     Group.createDataSchema mongo, 'groups',
       _id: mongo.pkey ObjectId
       name: String
+    # TODO Test using legacy namespaces where logical schema ns != data schema ns
     #,
     #  users: [User.groupId]
 
@@ -503,7 +504,7 @@ module.exports =
     , oplog
 
   '''should record a relation as an ObjectId when assigned to an already
-  persisted Schema documents @single''': (done) ->
+  persisted Schema documents''': (done) ->
     oplog = []
     User.create name: 'the clown', (err, createdAuthor) ->
       should.equal null, err
@@ -799,38 +800,38 @@ module.exports =
         done()
     , oplog
 
-#  # Inverse Refs as an Array
-#  '''should properly persist a relation that is the collection of documents that
-#  point to me via a Ref field in their schemas @single''': (done) ->
-#    oplog = []
-#    tweetsAttrs = [
-#      { status: 'hasta' }
-#      { status: 'la' }
-#      { status: 'vista' }
-#      { status: 'baby' }
-#    ]
-#    User.create
-#      name: 'Brian'
-#      tweets: tweetsAttrs
-#    , (err, user) ->
-#      should.equal null, err
-#      userId = ObjectId.fromString user.get '_id'
-#      blogs = user.get 'blogs'
-#      blogIds = (ObjectId.fromString blog.get '_id' for blog in blogs)
-#      remaining = 1 + blogIds.length
-#      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
-#        Object.keys(json).length.should.equal 2
-#        json._id.should.not.be.undefined
-#        json.name.should.not.be.undefined
-#        should.equal undefined, json._id
-#        --remaining || done()
-#      for blogId, i in blogIds
-#        do (i) ->
-#          mongo.adapter.findOne 'blogs', _id: blogId, {}, (err, json) ->
-#            json.status.should.equal tweetsAttrs[i].status
-#            --remaining || done()
-#    , oplog
-#
+  # Inverse Refs as an Array
+  '''should properly persist a relation that is the collection of documents that
+  point to me via a Ref field in their schemas''': (done) ->
+    oplog = []
+    tweetsAttrs = [
+      { status: 'hasta' }
+      { status: 'la' }
+      { status: 'vista' }
+      { status: 'baby' }
+    ]
+    User.create
+      name: 'Brian'
+      tweets: tweetsAttrs
+    , (err, user) ->
+      should.equal null, err
+      userId = ObjectId.fromString user.get '_id'
+      tweets = user.get 'tweets'
+      tweetIds = (ObjectId.fromString tweet.get '_id' for tweet in tweets)
+      remaining = 1 + tweetIds.length
+      mongo.adapter.findOne 'users', _id: userId, {}, (err, json) ->
+        Object.keys(json).length.should.equal 2
+        json._id.should.not.be.undefined
+        json.name.should.not.be.undefined
+        should.equal undefined, json.tweets
+        --remaining || done()
+      for tweetId, i in tweetIds
+        do (i) ->
+          mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
+            json.status.should.equal tweetsAttrs[i].status
+            --remaining || done()
+    , oplog
+
 #  '''should properly retrieve a relation that is the collection of documents that
 #  point to me via a Ref field in their schemas @single''': (done) ->
 #    oplog = []
