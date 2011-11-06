@@ -37,25 +37,25 @@ DataSource:: =
   # @param {String|False} ns is the namespace relative to the data source (as
   #     opposed to the logical source schema). `false` means that this is to 
   #     be used for embedded docs
-  # @param {Object} conf maps field names to type descriptor; a type
+  # @param {Object} fieldsConf maps field names to type descriptor; a type
   #     descriptor can be any number of syntactic representations of the 
   #     type the field is.
-  createDataSchema: ({name, ns, LogicalSchema: LogicalSkema}, fieldsConf) ->
+  # @param {Object} @optional virtualsConf
+  createDataSchema: ({name, ns, LogicalSchema: LogicalSkema}, fieldsConf, virtualsConf) ->
     if LogicalSkema
       ns ||= LogicalSkema.ns unless ns == false
       name ||= LogicalSkema._name
     else
       throw new Error 'Missing name' unless name
       throw new Error 'Missing ns'   unless ns == false || typeof ns is 'string'
-    ds = @[name] = new DataSchema @, name, ns, LogicalSkema, fieldsConf
+    ds = @[name] = new DataSchema @, name, ns, LogicalSkema, fieldsConf, virtualsConf
     if ns
       @dataSchemasWithNs[ns] = ds
     @_schemaPromises[name]?.fulfill ds
     return ds
 
   schema: (schemaName) ->
-    return promise if promise = @_schemaPromises[schemaName]
-    promise = @_schemaPromises[schemaName] = new Promise
+    promise = @_schemaPromises[schemaName] ||= new Promise
     bufferingDataSchema = new DataSchema.Buffer
     promise.callback (schema) -> bufferingDataSchema.flush schema
     return bufferingDataSchema

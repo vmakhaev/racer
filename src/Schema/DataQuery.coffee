@@ -2,8 +2,8 @@
 AbstractQuery = require './AbstractQuery'
 Promise = require '../Promise'
 
-DataQuery = module.exports = (criteria) ->
-  AbstractQuery.call @, criteria
+DataQuery = module.exports = (schema, criteria) ->
+  AbstractQuery.call @, schema, criteria
   return
 
 DataQuery:: = merge new AbstractQuery(),

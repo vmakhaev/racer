@@ -188,7 +188,7 @@ Schema.static
     # (source, ns, fieldsConf, virtualsConf)
 
     Schema._sources[source._name] ||= source
-    dataSchema = source.createDataSchema {LogicalSchema: @, ns}, fieldsConf
+    dataSchema = source.createDataSchema {LogicalSchema: @, ns}, fieldsConf, virtualsConf
     @dataSchemas.push dataSchema
 
 #      # In case data schema already exists
@@ -269,7 +269,8 @@ Schema.static
 # so we can do e.g., Schema.find, Schema.findOne, etc
 LogicalQuery = require './LogicalQuery'
 for queryMethodName, queryFn of LogicalQuery::
-  do (queryFn) ->
+  continue unless typeof queryFn is 'function'
+  do (queryMethodName, queryFn) ->
     Schema.static queryMethodName, (args...)->
       query = new LogicalQuery @
       return queryFn.apply query, args

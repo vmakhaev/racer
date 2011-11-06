@@ -83,22 +83,27 @@ CommandSet:: =
     if cmds.length == 1
       [cmd, cb, prevPosCb] = cmds[0]
       currProm.callback prevPosCb if prevPosCb
-      if currPos.next
+      if nextPos = currPos.next
         nextProm = new Promise
-        currProm.callback ->
-          cmd.fire (err, cid, extraAttrs) ->
-            return callback err if err
-            cb cid, extraAttrs if cb
+        @_setupPromises callback, nextPos, nextProm
+      currProm.callback ->
+        cmd.fire (err, cid, extraAttrs) ->
+          return callback err if err
+          cb cid, extraAttrs if cb
+          if nextPos
             nextProm.resolve err, cid, extraAttrs
-      else
-        currProm.callback ->
-          cmd.fire (err, cid, extraAttrs) ->
-            return callback err if err
-            cb cid, extraAttrs if cb
+          else
             callback null
     else
       currPosPromises = (new Promise for _ in cmds)
-      nextProm = Promise.parallel currPosPromises...
+      posPromise = Promise.parallel currPosPromises...
+      if nextPos = currPos.next
+        nextProm = posPromise
+        @_setupPromises callback, nextPos, nextProm
+      else
+        posPromise.bothback (err) ->
+          return callback err if err
+          callback null
       currProm.callback ->
         for [cmd, cb, prevPosCb], i in cmds
           currProm.callback prevPosCb if prevPosCb
@@ -108,9 +113,6 @@ CommandSet:: =
             cmd.fire (err, cid, extraAttrs) ->
               return callback err if err
               cmdPromise.fulfill cid, extraAttrs
-
-    if currPos.next
-      @_setupPromises callback, currPos.next, nextProm
     
     return currProm
 

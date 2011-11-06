@@ -3,8 +3,8 @@ AbstractQuery = require './AbstractQuery'
 Promise = require '../Promise'
 DSQueryDispatcher = require './DSQueryDispatcher'
 
-LogicalQuery = module.exports = (criteria) ->
-  AbstractQuery.call @, criteria
+LogicalQuery = module.exports = (schema, criteria) ->
+  AbstractQuery.call @, schema, criteria
   return
 
 LogicalQuery:: = merge new AbstractQuery(),

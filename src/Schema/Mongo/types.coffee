@@ -2,46 +2,7 @@ Schema = require '../index'
 {merge} = require '../../util'
 DataField = require '../DataField'
 Promise = require '../../Promise'
-
-baseType =
-  createField: (opts) -> new DataField @, opts
-
-  extend: (name, conf) ->
-    extType = Object.create @
-    extType._name = name
-    merge extType, conf
-    return extType
-
-  handleSet: (cmd, cmdSet, path, val) ->
-    val = @cast val if @cast
-    switch cmd.method
-      when 'update'
-        set = cmd.val.$set ||= {}
-        set[path] = val
-      when 'insert'
-        if -1 == path.indexOf '.'
-          cmd.val[path] = val
-        else
-          @_assignToUnflattened cmd.val, path, val
-      else
-        throw new Error 'Implement for other incoming method ' + cmd.method
-    return true
-
-  # Takes flattenedPath and traverses the object, assignTo, to the corresponding
-  # node. Then, assigns val to this node.
-  # @param {Object} assignTo
-  # @param {String} flattenedPath
-  # @param {Object} val
-  _assignToUnflattened: (assignTo, flattenedPath, val) ->
-    curr      = assignTo
-    parts     = flattenedPath.split '.'
-    lastIndex = parts.length - 1
-    for part, i in parts
-      if i == lastIndex
-        curr[part] = val
-      else
-        curr = curr[part] ||= {}
-    return curr
+{baseType} = require('../DataSchema')::types
 
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId = baseType.extend 'ObjectId',
@@ -107,7 +68,7 @@ exports.Array = baseType.extend 'Array',
         return derefProm
     return field
   
-  handleSet: (cmd, cmdSet, path, val) ->
+  translateSet: (cmd, cmdSet, path, val) ->
     {pkeyName} = @memberType
 
     positionCb = (prevPosFulfilledVals...) ->
@@ -179,7 +140,7 @@ exports.Ref = baseType.extend 'Ref',
       return source.dataSchemasWithNs[ns].findOne conds, null, callback
     return field
 
-  handleSet: (cmd, cmdSet, path, val) ->
+  translateSet: (cmd, cmdSet, path, val) ->
     pkeyName = @pkeyName
     if ((val instanceof Schema && val.isNew) || !(val instanceof Schema)) && cid = val.cid
       dependencyCmd = cmdSet.commandsByCid[cid]
@@ -198,9 +159,11 @@ exports.Ref = baseType.extend 'Ref',
       return true
     if pkeyVal = val[pkeyName]
       # TODO What if pkey is not supposed to be an ObjectId
-      exports.ObjectId.handleSet cmd, cmdSet, path, pkeyVal
+      exports.ObjectId.translateSet cmd, cmdSet, path, pkeyVal
       return true
     return false
+
+exports.Virtual = baseType.extend 'Virtual', {}
 
 for type in ['String', 'Number']
   exports[type] = baseType.extend type, {}
