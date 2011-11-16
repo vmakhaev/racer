@@ -829,11 +829,12 @@ module.exports =
         do (i) ->
           mongo.adapter.findOne 'tweets', _id: tweetId, {}, (err, json) ->
             json.status.should.equal tweetsAttrs[i].status
+            json.author.should.eql userId
             --remaining || done()
     , oplog
 
 #  '''should properly retrieve a relation that is the collection of documents that
-#  point to me via a Ref field in their schemas @single''': (done) ->
+#  point to me via a Ref field in their schemas @singles''': (done) ->
 #    oplog = []
 #    tweetsAttrs = [
 #      { status: 'hasta' }
@@ -843,7 +844,7 @@ module.exports =
 #    ]
 #    User.create
 #      name: 'Brian'
-#      tweets: tweetAttrs
+#      tweets: tweetsAttrs
 #    , (err, user) ->
 #      should.equal null, err
 #      userId = user.get '_id'
@@ -861,7 +862,7 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
-    commandSet = Schema._oplogToCommandSet u.oplog
+    commandSet = Schema._oplogToCommandSequence u.oplog
     cmd = commandSet.singleCommand
     {method, args} = cmd.compile()
     args.should.eql [
@@ -878,8 +879,8 @@ module.exports =
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
     u.set 'age', 26
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -894,8 +895,8 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.del 'name'
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -913,8 +914,8 @@ module.exports =
     u = new User _id: 1, isNew
     u.del 'name'
     u.del 'age'
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -929,8 +930,8 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -946,8 +947,8 @@ module.exports =
     isNew = false
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs', 'sf'
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -963,8 +964,8 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'tags', 'sf'
-    cmdSet = Schema._oplogToCommandSet u.oplog
-    cmd = cmdSet.singleCommand
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
+    cmd = cmdSeq.singleCommand
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -981,12 +982,12 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'keywords', 'sf'
-    cmdSet = Schema._oplogToCommandSet u.oplog
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
 
-    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds = Object.keys cmdSeq.commandsById
     cmdIds.should.have.length 2
 
-    cmd = cmdSet.commandsById[cmdIds[0]]
+    cmd = cmdSeq.commandsById[cmdIds[0]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -996,7 +997,7 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    cmd = cmdSet.commandsById[cmdIds[1]]
+    cmd = cmdSeq.commandsById[cmdIds[1]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1015,12 +1016,12 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs'
     u.push 'keywords', 'sf', 'socal'
-    cmdSet = Schema._oplogToCommandSet u.oplog
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
 
-    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds = Object.keys cmdSeq.commandsById
     cmdIds.should.have.length 2
 
-    cmd = cmdSet.commandsById[cmdIds[0]]
+    cmd = cmdSeq.commandsById[cmdIds[0]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1030,7 +1031,7 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    cmd = cmdSet.commandsById[cmdIds[1]]
+    cmd = cmdSeq.commandsById[cmdIds[1]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1049,12 +1050,12 @@ module.exports =
     u = new User _id: 1, isNew
     u.push 'tags', 'nodejs', 'sf'
     u.push 'keywords', 'socal'
-    cmdSet = Schema._oplogToCommandSet u.oplog
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
 
-    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds = Object.keys cmdSeq.commandsById
     cmdIds.should.have.length 2
 
-    cmd = cmdSet.commandsById[cmdIds[0]]
+    cmd = cmdSeq.commandsById[cmdIds[0]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1064,7 +1065,7 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    cmd = cmdSet.commandsById[cmdIds[1]]
+    cmd = cmdSeq.commandsById[cmdIds[1]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1082,12 +1083,12 @@ module.exports =
     u = new User _id: 1, isNew
     u.set 'name', 'Brian'
     u.push 'keywords', 'socal'
-    cmdSet = Schema._oplogToCommandSet u.oplog
+    cmdSeq = Schema._oplogToCommandSequence u.oplog
 
-    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds = Object.keys cmdSeq.commandsById
     cmdIds.should.have.length 2
 
-    cmd = cmdSet.commandsById[cmdIds[0]]
+    cmd = cmdSeq.commandsById[cmdIds[0]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1097,7 +1098,7 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    cmd = cmdSet.commandsById[cmdIds[1]]
+    cmd = cmdSeq.commandsById[cmdIds[1]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1119,12 +1120,12 @@ module.exports =
     u1.push 'tags', 'nodejs'
     u2.push 'tags', 'sf'
 
-    cmdSet = Schema._oplogToCommandSet sharedOplog
+    cmdSeq = Schema._oplogToCommandSequence sharedOplog
 
-    cmdIds = Object.keys cmdSet.commandsById
+    cmdIds = Object.keys cmdSeq.commandsById
     cmdIds.length.should.equal 2
 
-    cmd = cmdSet.commandsById[cmdIds[0]]
+    cmd = cmdSeq.commandsById[cmdIds[0]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [
@@ -1134,7 +1135,7 @@ module.exports =
       { upsert: true, safe: true }
     ]
 
-    cmd = cmdSet.commandsById[cmdIds[1]]
+    cmd = cmdSeq.commandsById[cmdIds[1]]
     {method, args} = cmd.compile()
     method.should.equal 'update'
     args.should.eql [

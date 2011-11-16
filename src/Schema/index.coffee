@@ -1,9 +1,9 @@
-# TODO Re-name @_doc and @fields for less confusion
 Promise = require '../Promise'
 {EventEmitter} = require 'events'
 {merge} = require '../util'
 FlowBuilder = require './FlowBuilder'
-CommandSet = require './CommandSet'
+CommandSequence = require './CommandSequence'
+operation = require './operation'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
@@ -12,12 +12,13 @@ Schema = module.exports = ->
   EventEmitter.call @
   return
 
-Schema._schemas = {}
+Schema._schemas    = {} # Maps schema namespaces -> Schema subclasses
+Schema._sources    = {} # Maps source names -> DataSource instances
 Schema._subclasses = []
-Schema._sources = {}
+
 Schema.extend = (name, ns, config) ->
   ParentClass = @
-  # Constructor
+  # @constructor
   # @param {String -> Object} attrs maps path names to their values
   # @param {Boolean} isNew; will be false when populating this from the
   #                  results of a Query
@@ -28,25 +29,23 @@ Schema.extend = (name, ns, config) ->
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
-
-    @_doc = {}
+    @_doc = {} # TODO Re-name @_doc and @fields for less confusion
 
     ParentClass.apply @, Array::slice.call arguments
 
-    if attrs
+    if attrs then for attrName, attrVal of attrs
       # TODO attrs may contain nested objects
-      for attrName, attrVal of attrs
-        # TODO Lazy casting later?
-        field = SubClass.fields[attrName]
+      # TODO Lazy casting later?
+      field = SubClass.fields[attrName]
 
-        # 1st conditional term: Cast defined fields; ad hoc fields skip this
-        # 2nd conditional term: Don't cast undefineds
-        if field && attrVal
-          attrVal = field.cast attrVal, if @isNew then @oplog else null
-        if @isNew
-          @set attrName, attrVal
-        else
-          @_assignAttrs attrName, attrVal
+      # 1st conditional term: Cast defined fields; ad hoc fields skip this
+      # 2nd conditional term: Don't cast undefineds
+      if field && attrVal
+        attrVal = field.cast attrVal, if @isNew then @oplog else null
+      if @isNew
+        @set attrName, attrVal
+      else
+        @_assignAttrs attrName, attrVal
     # TODO Add the following block back
 #     if @isNew
 #       # TODO Move source defaults out of constructor?
@@ -58,10 +57,8 @@ Schema.extend = (name, ns, config) ->
   SubClass:: = proto = new ParentClass()
   proto.constructor = SubClass
 
-  # SubClass.name is frozen to ""
-  SubClass._name = name
-  SubClass.ns = ns
-
+  SubClass.ns          = ns
+  SubClass._name       = name # SubClass.name is frozen to ""
   SubClass._subclasses = []
   SubClass._superclass = @
   @_subclasses.push SubClass
@@ -82,7 +79,7 @@ Schema.extend = (name, ns, config) ->
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
-    field = Schema.createFieldFrom descriptor, fieldName
+    field = Schema._createFieldFrom descriptor, fieldName
     bootstrapField = (field, fieldName, SubClass) ->
       field.sources = [] # TODO Are we using field.sources?
       field.path    = fieldName
@@ -106,7 +103,6 @@ Schema.extend = (name, ns, config) ->
 
   return Schema._schemas[ns] = SubClass
 
-Schema._statics = {}
 Schema.static = (name, fn) ->
   if name.constructor == Object
     for _name, fn of name
@@ -122,6 +118,7 @@ Schema.static = (name, fn) ->
       decorateDescendants SubClass._subclasses, name, fn
   decorateDescendants @_subclasses, name, fn
   return @
+Schema._statics = {}
 
 Schema.fromPath = (path) ->
   pivot = path.indexOf '.'
@@ -132,34 +129,34 @@ Schema.fromPath = (path) ->
   path  = path.substring pivot+1
   return { Skema: @_schemas[ns], id, path }
 
-
 # Send the oplog to the data sources, where they
 # convert the ops into db commands and exec them
 #
 # @param {Array} oplog
 # @param {Function} callback(err, doc)
-# @param {Schema} doc that originates the applyOps call
-Schema.applyOps = (oplog, callback) ->
-  cmdSet = @_oplogToCommandSet oplog
-  return cmdSet.fire (err, cid, extraAttrs) ->
+# @param {Schema} doc that originates the _applyOps call
+Schema._applyOps = (oplog, callback) ->
+  cmdSeq = @_oplogToCommandSequence oplog
+  return cmdSeq.fire (err, cid, extraAttrs) ->
     return callback(err || null)
 
 # Keeping this as a separate function makes testing oplog to
 # command set possible.
 # TODO This should be able to handle more refined write flow control
-Schema._oplogToCommandSet = (oplog) ->
-  cmdSet = new CommandSet
+# TODO Handle nested paths
+Schema._oplogToCommandSequence = (oplog) ->
+  cmdSeq = new CommandSequence
   for op in oplog
     {doc, ns, conds, method, path, args} = operation.splat op
-    # TODO Handle nested paths
     LogicalSkema = Schema._schemas[ns]
     {dataFields} = logicalField = LogicalSkema.fields[path]
-
-    # TODO How does this fit in with STM? We need a rollback mechanism
+    # TODO How to modify for STM? Need rollback mechanism
     for dataField in dataFields
       {source} = dataField
-      source[method] cmdSet, doc, dataField, conds, args...
-  return cmdSet
+      # In order to modify cmdSeq, we delegate to the data
+      # source, which delegates the appropriate data type
+      source[method] cmdSeq, doc, dataField, conds, args...
+  return cmdSeq
 
 Schema.static
   # TODO Do we even need dataSchemas as a static here?
@@ -206,18 +203,16 @@ Schema.static
     [ [@constructor.ns, {_id: id}, method, args] ]
 
   create: (attrs, callback, oplog = Schema.oplog) ->
-    obj = new @(attrs, true, oplog)
-    obj.save (err) ->
-      return callback err if err
-      callback null, obj
+    doc = new @(attrs, true, oplog)
+    doc.save callback
 
   update: (conds, attrs, callback) ->
     oplog = ([@ns, conds, 'set', path, val] for path, val of attrs)
-    Schema.applyOps oplog, callback
+    Schema._applyOps oplog, callback
 
   destroy: (conds, callback) ->
     oplog = [ [@ns, conds] ]
-    Schema.applyOps oplog, callback
+    Schema._applyOps oplog, callback
 
   plugin: (plugin, opts) ->
     plugin @, opts
@@ -275,9 +270,10 @@ for queryMethodName, queryFn of LogicalQuery::
       query = new LogicalQuery @
       return queryFn.apply query, args
 
-Schema:: = EventEmitter::
-Schema::constructor = Schema
+Schema:: = new EventEmitter
 merge Schema::,
+  constructor: Schema
+
   toJSON: -> @_doc
 
   _assignAttrs: (name, val, obj = @_doc) ->
@@ -333,7 +329,7 @@ merge Schema::,
   destroy: (callback) ->
     if _id = @_doc._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'destroy']
-    Schema.applyOps oplog, callback
+    Schema._applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
     if typeof callback isnt 'function'
@@ -368,11 +364,10 @@ merge Schema::,
   save: (callback) ->
     oplog = @oplog.slice()
     @oplog.reset()
-    self = @
-    Schema.applyOps oplog, (err) ->
+    Schema._applyOps oplog, (err) =>
       return callback err if err
-      self.isNew = false
-      callback null, self
+      @isNew = false
+      callback null, @
 
   validate: ->
     errors = []
@@ -382,10 +377,6 @@ merge Schema::,
       errors = errors.concat result
     return if errors.length then errors else true
 
-
-#Schema.async = AsyncSchema
-#
-#Schema.sync = SyncSchema
 
 Schema.static 'mixin', (mixin) ->
   {init, static, proto} = mixin
@@ -428,7 +419,7 @@ Schema.type = (typeName, config) ->
   return type
 Schema._types = {}
 
-Schema.createFieldFrom = (descriptor, fieldName) ->
+Schema._createFieldFrom = (descriptor, fieldName) ->
   if descriptor.constructor != Object
     type = @inferType descriptor
     return type if type instanceof Promise
@@ -488,8 +479,6 @@ Schema.inferType = (descriptor) ->
 #   tweets: ['Tweet']
 #
 # Schema.inferType delegates to the following Schema promise code
-Schema._schemaPromises = {}
-# @param {String} schemaName
 Schema._schemaPromise = (schemaName) ->
   # Cache only one promise per schema
   schemaPromises = @_schemaPromises
@@ -501,6 +490,7 @@ Schema._schemaPromise = (schemaName) ->
       promise.fulfill schema
       return promise
   return promise
+Schema._schemaPromises = {}
 
 Schema.type 'String',
   cast: (val) -> val.toString()
@@ -511,7 +501,3 @@ Schema.type 'Number',
 Schema.type 'Array',
   cast: (list, oplog) ->
     return (@memberType.cast member, oplog for member in list)
-
-operation =
-  splat: ([doc, ns, conds, method, args...]) ->
-    {doc, ns, conds, method, path: args[0], args}

@@ -2,7 +2,7 @@ Promise = require '../Promise'
 {deepEqual} = require '../util'
 
 # @param {Object} opToCommand maps op names -> command generator
-CommandSet = module.exports = ->
+CommandSequence = module.exports = ->
   @root          = null
   @commands      = {} # maps hash -> ns -> [Command instances]
   @commandsById  = {} # maps command id -> Command instance
@@ -10,18 +10,22 @@ CommandSet = module.exports = ->
   @pendingByCid  = {} # Contains op data dependent on cid's we have yet to see
   return
 
-# CommandSet holds a set of related commands and maintains a 
+# CommandSequence holds a set of related commands and maintains a 
 # dependency graph of commands which is used to fire commands 
-# in both a parallel and serial manner upon CommandSet::fire
-CommandSet:: =
-  positionBefore: (cmdToPos, cmdRel, callback) ->
-    @clearPos cmdToPos
-    targetPos = cmdRel.pos
-    # TODO Fix and test the following if/else logic
-    if currPrev = targetPos.prev
-      currPrev.next = { prev: currPrev, next: targetPos, cmds: [[cmdToPos, callback]] }
+# in both a parallel and serial manner upon CommandSequence::fire
+CommandSequence:: =
+  # TODO Replace with `position cmd, before: fixedCmd, callback`
+  # TODO Add tests
+  # @param {Array}    movingCmd
+  # @param {Array}    fixedCmd
+  # @param {Function} callback
+  positionBefore: (movingCmd, fixedCmd, callback) ->
+    @clearPos movingCmd
+    fixedPos = fixedCmd.pos
+    if currPrev = fixedPos.prev
+      currPrev.next = movingCmd.pos = { prev: currPrev, next: fixedPos, cmds: [[movingCmd, callback]] }
     else
-      @root = cmdToPos.pos = targetPos.prev = { next: targetPos, cmds: [[cmdToPos, callback]] }
+      @root = movingCmd.pos = fixedPos.prev = { next: fixedPos, cmds: [[movingCmd, callback]] }
 
   pipe: (cmdA, cmdB, callback) ->
     @positionBefore cmdA, cmdB, callback
@@ -36,13 +40,14 @@ CommandSet:: =
     else
       cmd.pos = pos.next = { prev: pos, cmds: [cmdMeta] }
 
-  clearPos: (cmdToRemove) ->
-    return unless targetPos = cmdToRemove.pos
-    {cmds} = targetPos
-    for [cmd], i in cmds
-      if cmd.id == cmdToRemove.id
+  clearPos: (cmd) ->
+    return unless pos = cmd.pos
+    delete cmd.pos
+    {cmds} = pos
+    for [currCmd], i in cmds
+      if currCmd.id == cmd.id
         # TODO What if we splice out a callback?
-        targetPos.cmds.splice i, 1
+        pos.cmds.splice i, 1
         return
 
   # As an alternative to isMatchPredicate, we could subclass Command as MongoCommand and place the logic inside
