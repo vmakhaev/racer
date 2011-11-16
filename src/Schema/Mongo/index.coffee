@@ -1,6 +1,6 @@
 DataSource = require '../DataSource'
 types = require './types'
-CommandSet = require '../CommandSet'
+CommandSequence = require '../CommandSequence'
 Command = require '../Command'
 Schema = require '../index'
 DataSchema = require '../DataSchema'
@@ -81,16 +81,36 @@ MongoSource = module.exports = DataSource.extend
       for path, toEval of conds
         [_, targetPath] = toEval.split '.'
         conds[path] = (doc) -> doc[targetPath]
+        fkey = path
+        pkey = targetPath
 #      type = switch query.queryMethod
       return switch query.queryMethod
         when 'findOne' then types.OneInverse
 #        when 'find'    then types.ManyInverse
         when 'find' then {
           typeParams:
-            shouldIgnoreSet: true
+            matchesMultipleCmds: true
+            translateSet: (cmd, cmdSeq, path, val, doc, dataField) ->
+              dependencyCmd = cmdSeq.commandsByCid[doc.cid]
+              cmds = (cmdSeq.commandsByCid[cid] for {cid} in val)
+              cmdSeq.pipe dependencyCmd, cmds[0], (incomingCid, extraAttrs) ->
+                fkey = dataField.fkey
+                pkeyName = dataField.pkey
+                fkeyVal = extraAttrs[pkeyName]
+                for cmd in cmds
+                  switch cmd.method
+                    when 'insert' then cmd.val[fkey]      = fkeyVal
+                    when 'update' then cmd.val.$set[fkey] = fkeyVal
+                    else
+                      throw new Error "Command method #{cmd.method} isn't supported in this context"
           fieldParams:
             ns: DataSkema.ns
+            query: query
+            fkey: fkey
+            pkey: pkey
         }
+
+      # TODO Deprecate the following code?
       type = Object.create type
       type._baseQuery = query
       type.get = (doc) ->
@@ -118,32 +138,30 @@ MongoSource = module.exports = DataSource.extend
     return curr
 
   # TODO Better lang via MongoCommandBuilder.handle 'set', (...) -> ?
-  # @param {CommandSet} the current command set we're building
+  # @param {CommandSequence} the current command sequence we're building
   # @param {Schema}     doc that generated the incoming op params
   # @param {DataField}  the data source field
   # @param {Object}     conds is the oplog op's conds
   # @param {String}     path is the oplog op's path
   # @param {Object}     val is the oplog op's val
-  set: (cmdSet, doc, dataField, conds, path, val) ->
+  set: (cmdSeq, doc, dataField, conds, path, val) ->
     dataType = dataField.type
 
-    return cmdSet if dataType.shouldIgnoreSet
-
     # if dataType instanceof DataSchema && cid = val.cid
-    if didDefer = dataType.maybeDeferTranslateSet?(cmdSet, doc, dataField, conds, path, val)
-      return cmdSet
+    if dataType.maybeDeferTranslateSet?(cmdSeq, doc, dataField, conds, path, val)
+      return cmdSeq
 
     # If prior pending ops are expecting a document with cid
-    if (cid = doc.cid) && (pending = cmdSet.pendingByCid[cid])
-      delete cmdSet.pendingByCid[cid]
+    if (cid = doc.cid) && (pending = cmdSeq.pendingByCid[cid])
+      delete cmdSeq.pendingByCid[cid]
       (newVal = {})[path] = val
       for [method, pendingDoc, pendingDataField, pendingConds, pendingPath, pendingVal] in pending
-        @[method] cmdSet, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
-      return cmdSet
+        @[method] cmdSeq, pendingDoc, pendingDataField, pendingConds, pendingPath, newVal
+      return cmdSeq
 
     {ns} = dataField
 
-    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
+    matchingCmd = cmdSeq.findCommand ns, conds, isMatch = (cmd) ->
       {method: cmethod, val: cval} = cmd
       switch cmethod
         when 'insert' then return true
@@ -155,31 +173,33 @@ MongoSource = module.exports = DataSource.extend
             return true
       return false
 
-    unless matchingCmd
-      if cid = conds.__cid__
-        if pending = cmdSet.pendingByCid[cid]
-          for [pdoc, pfield, pconds, ppath, pval] in pending
-            @set cmdSet, pdoc, dataField, pconds, ppath + '.' + path, val
-          # We want to keep around pending for any future ops that are grounded in cid
-          # , so we don't delete cmdSet.pendingByCid[cid]
-          return cmdSet
+    # Virtual data types modify existing commands, so don't create a matchingCmd
+    unless dataType._name == 'Virtual'
+      unless matchingCmd
+        if cid = conds.__cid__
+          if pending = cmdSeq.pendingByCid[cid]
+            for [pdoc, pfield, pconds, ppath, pval] in pending
+              @set cmdSeq, pdoc, dataField, pconds, ppath + '.' + path, val
+            # Don't `delete cmdSe.pendingByCid[cid]` because we want to keep
+            # around `pending` for any future ops that are grounded in cid
+            return cmdSeq
 
-      matchingCmd        = new Command @, ns, conds, doc
-      matchingCmd.val    = {}
-      matchingCmd.method = if conds.__cid__ then 'insert' else 'update'
+        matchingCmd        = new Command @, ns, conds, doc
+        matchingCmd.val    = {}
+        matchingCmd.method = if conds.__cid__ then 'insert' else 'update'
 
-      cmdSet.index    matchingCmd
-      cmdSet.position matchingCmd
+        cmdSeq.index    matchingCmd
+        cmdSeq.position matchingCmd
 
     unless dataType.translateSet
       throw new Error "Data type '#{dataType._name}' does not have method `translateSet`"
-    dataType.translateSet matchingCmd, cmdSet, path, val
-    return cmdSet
+    dataType.translateSet matchingCmd, cmdSeq, path, val, doc, dataField
+    return cmdSeq
 
-  del: (cmdSet, doc, dataField, conds, path) ->
+  del: (cmdSeq, doc, dataField, conds, path) ->
     {ns} = dataField
 
-    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
+    matchingCmd = cmdSeq.findCommand ns, conds, isMatch = (cmd) ->
       if cmd.method == 'update'
         $atomics = Object.keys cmd.val
         if $atomics.length > 1
@@ -193,32 +213,32 @@ MongoSource = module.exports = DataSource.extend
       matchingCmd.method = 'update'
       matchingCmd.val    = $unset: unset
 
-      cmdSet.index    matchingCmd
-      cmdSet.position matchingCmd
+      cmdSeq.index    matchingCmd
+      cmdSeq.position matchingCmd
 
-      return cmdSet
+      return cmdSeq
 
     switch matchingCmd.method
       when 'update'
         matchingCmd.val.$unset[path] = 1
       else
         throw new Error 'Unsupported'
-    return cmdSet
+    return cmdSeq
 
-  push: (cmdSet, doc, dataField, conds, path, values...) ->
+  push: (cmdSeq, doc, dataField, conds, path, values...) ->
     {ns, type: dataType} = dataField
 
     if dataType.memberType instanceof DataSchema && cid = values[0].cid
       for {cid} in values
         # Handle embedded arrays of docs
-        pending = cmdSet.pendingByCid[cid] ||= []
+        pending = cmdSeq.pendingByCid[cid] ||= []
         op = ['push'].concat Array::slice.call(arguments, 1)
         pending.push op
-      return cmdSet
+      return cmdSeq
 
     values = dataField.cast values if dataField?.cast
 
-    matchingCmd = cmdSet.findCommand ns, conds, isMatch = (cmd) ->
+    matchingCmd = cmdSeq.findCommand ns, conds, isMatch = (cmd) ->
       {method: cmethod, val: cval} = cmd
       switch cmethod
         when 'insert' then return true
@@ -231,8 +251,8 @@ MongoSource = module.exports = DataSource.extend
 
     if dataType.memberType._name == 'Object' && values[0] instanceof Schema
       memberField = dataType.memberType.createField()
-      @push cmdSet, doc, ns, dataType.memberType, conds, path, (val._doc for val in values)
-      return cmdSet
+      @push cmdSeq, doc, ns, dataType.memberType, conds, path, (val._doc for val in values)
+      return cmdSeq
 
     unless matchingCmd
       matchingCmd = new Command @, ns, conds, doc
@@ -248,9 +268,9 @@ MongoSource = module.exports = DataSource.extend
           throw new Error 'length of 0! Uh oh!'
         (args = {})[path] = val
         (matchingCmd.val ||= {})[k] = args
-      cmdSet.index    matchingCmd
-      cmdSet.position matchingCmd
-      return cmdSet
+      cmdSeq.index    matchingCmd
+      cmdSeq.position matchingCmd
+      return cmdSeq
 
     switch matchingCmd.method
       when 'update'
@@ -267,7 +287,7 @@ MongoSource = module.exports = DataSource.extend
         arr.push values...
       else
         throw new Error 'Unimplemented'
-    return cmdSet
+    return cmdSeq
 
   pop: (ns, field, cmd, path, values..., ver) ->
     throw new Error 'Unimplemented'
