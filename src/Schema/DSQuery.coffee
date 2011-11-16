@@ -22,6 +22,7 @@ DSQuery:: =
       if didNotFind then delete _includeFields[dataField.path]
     delete logicalFields[logicalPath]
     @fire() unless Object.keys(logicalFields).length
+    return
 
   # @param {DataField} dataField
   # @param {Promise} dataFieldProm

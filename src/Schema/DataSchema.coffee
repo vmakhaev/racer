@@ -2,17 +2,16 @@ Promise = require '../Promise'
 DataField = require './DataField'
 {merge} = require '../util'
 
+# @constructor DataSchema
+# @param {DataSource} source is the data source with which to associate this DataSchema
+# @param {String} name is the name of the DataSchema
+# @param {String} ns is the namespace of the DataSchema
+# @param {Schema} LogicalSkema is the LogicalSchema subclass
+# @param {Object} conf maps field names to field descriptors
+# @param {Object} virtualsConf maps virtual field names to virtual field descriptors
 DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, virtualsConf) ->
-  unless @ns = ns
-    # Disable find, findOne if missing a namespace
-    @find = @findOne = null
-
-  # Compile the fields
-  bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
-    fields[fieldName] = dataField
-    if LogicalSkema
-      # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
-      LogicalSkema.fields[logicalPath].dataFields.push dataField
+  # Disable find, findOne if missing a namespace
+  unless @ns = ns then @find = @findOne = null
   fields = @fields = {}
   self = this
   for fieldName, descriptor of conf
@@ -28,19 +27,24 @@ DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, virtualsC
     dataField = @_createFieldFrom descriptor, ns, fieldName, logicalField
     bootstrapField dataField, fieldName, fields, LogicalSkema, logicalPath
 
-  if virtualsConf
-    for fieldName, descriptor of virtualsConf
-      logicalPath = fieldName
-      logicalField = LogicalSkema?.fields[logicalPath]
-      if descriptor instanceof DataSchema.Buffer
-        do (descriptor, fieldName, logicalPath, logicalField) ->
-          descriptor.onFlush = (bufferedDescriptor, DataSkema) ->
-            virtualField = self._createVirtualFrom bufferedDescriptor, ns, fieldName, logicalField
-            bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
-        continue
-      virtualField = @_createVirtualFrom descriptor, ns, fieldName, logicalField
-      bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
+  if virtualsConf then for fieldName, descriptor of virtualsConf
+    logicalPath = fieldName
+    logicalField = LogicalSkema?.fields[logicalPath]
+    if descriptor instanceof DataSchema.Buffer
+      do (descriptor, fieldName, logicalPath, logicalField) ->
+        descriptor.onFlush = (bufferedDescriptor, DataSkema) ->
+          virtualField = self._createVirtualFrom bufferedDescriptor, ns, fieldName, logicalField
+          bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
+      continue
+    virtualField = @_createVirtualFrom descriptor, ns, fieldName, logicalField
+    bootstrapField virtualField, fieldName, fields, LogicalSkema, logicalPath
   return
+
+bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
+  fields[fieldName] = dataField
+  if LogicalSkema
+    # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
+    LogicalSkema.fields[logicalPath].dataFields.push dataField
 
 DataSchema:: =
   # shortcut for use in rvalues of other data source schemas
@@ -112,6 +116,7 @@ DataSchema:: =
     fieldParams = merge {path, ns, logicalField, source}, fieldParams
     return virtualType.createField fieldParams
 
+  # This will occur...
   maybeDeferTranslateSet: (cmdSet, doc, dataField, conds, path, val) ->
     return false unless cid = val.cid
     # Handle embedded docs

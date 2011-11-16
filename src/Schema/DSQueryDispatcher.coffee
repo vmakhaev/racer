@@ -8,13 +8,6 @@ DSQueryDispatcher = module.exports = (@_queryMethod) ->
   return
 
 DSQueryDispatcher:: =
-  _didNotFind: ([metas, dataField]) ->
-    return true if metas is undefined || !metas.length
-    for {val} in metas
-      return true unless val?
-    return false
-  _didNotFindOne: ([val, dataField]) -> ! val?
-
   registerLogicalField: (logicalField, conds) ->
     unless logicalField.dataFields.length
       console.warn """`#{logicalField.path}` is a declared logical field of
@@ -26,23 +19,30 @@ DSQueryDispatcher:: =
     queryMethod        = @_queryMethod
     dataFieldFlow      = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
     lastPhase          = dataFieldFlow.length - 1
-    fieldHandler       = @['_' + queryMethod + 'FieldHandler']
+    switch queryMethod
+      when 'find'    then onFound = @_onFind   ; noneFoundPredicate = @_didntFind
+      when 'findOne' then onFound = @_onFindOne; noneFoundPredicate = @_didntFindOne
     lFieldPromise      = new Promise # Promise for the future fetched data field value
-    noneFoundPredicate = if queryMethod == 'find' then @_didNotFind else @_didNotFindOne
-    dFieldPromCb       = (err, val, dataField) -> fieldHandler err, val, dataField, lFieldPromise
+    dFieldPromCb       = (err, val, dataField) -> onFound err, val, dataField, lFieldPromise
     @_logicalFieldsPromises.push lFieldPromise
+
+    # For each phase, place the data fields assoc with that phase
+    # into a minimum number of queries. Fire those queries.
     for [dataFields, parallelCallback], phase in dataFieldFlow
-#      if dataFields[0].dependsOn
-#        # TODO
-#        continue
       dFieldPromises = []
       for dField in dataFields
         dFieldPromises.push dFieldProm = new Promise
+        dFieldProm.bothback dFieldPromCb
         # TODO Transform conds based on dField and dField.schema
-        q = @_findOrCreateQuery phase, dField.source, dField.ns, conds, queryMethod
+        if dField.query
+          # Handles many or one inverse of Ref
+          _conds = dField.query._conditions
+          _conds[k] = _conds[k](conds) for k, v of _conds
+          conds = _conds
+          fieldQueryMethod = dField.query.queryMethod
+        q = @_findOrCreateQuery phase, dField.source, dField.ns, conds, fieldQueryMethod || queryMethod
         q.add dField, dFieldProm
         # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
-        dFieldProm.bothback dFieldPromCb
 
       phasePromise = Promise.parallel dFieldPromises...
       do (parallelCallback, phase) ->
@@ -55,22 +55,6 @@ DSQueryDispatcher:: =
           else
             self._notifyPhase phase + 1, logicalField, noneFound
 
-  _findOneFieldHandler: (err, val, dataField, logicalFieldPromise) ->
-    # TODO handle err
-    # TODO Alternatively to logicalFieldPromise.fulfilled lazy check, we can eagerly remove dataFieldProm's callbacks upon an logicalFieldPromise fulfillment
-    return if val is undefined || logicalFieldPromise.fulfilled
-    val = dataField.type.uncast val if dataField.type?.uncast
-    return logicalFieldPromise.fulfill val
-
-  _findFieldHandler: (err, values, dataField, logicalFieldPromise) ->
-    return if values is undefined || !values.length || logicalFieldPromise.fulfilled
-    # TODO modify this to handle pagination
-    dataType = dataField.type
-    for meta in values
-      if dataType.uncast
-        meta.val = dataType.uncast meta.val
-    return logicalFieldPromise.fulfill values
-
   # @param {Function} callback(err, val)
   fire: (callback) ->
     queriesByHash = @_queriesByPhase[0]
@@ -80,24 +64,48 @@ DSQueryDispatcher:: =
     allPromise.bothback callback if callback
     return allPromise
 
+  _onFindOne: (err, val, dataField, logicalFieldPromise) ->
+    # TODO handle err
+    # TODO Alternatively to logicalFieldPromise.fulfilled lazy check, we can eagerly remove dataFieldProm's callbacks upon an logicalFieldPromise fulfillment
+    return if val is undefined || logicalFieldPromise.fulfilled
+    val = dataField.type.uncast val if dataField.type?.uncast
+    return logicalFieldPromise.fulfill val
+
+  _onFind: (err, values, dataField, logicalFieldPromise) ->
+    return if values is undefined || !values.length || logicalFieldPromise.fulfilled
+    # TODO modify this to handle pagination
+    dataType = dataField.type
+    for meta in values
+      if dataType.uncast
+        meta.val = dataType.uncast meta.val
+    return logicalFieldPromise.fulfill values
+
   # @param {Number} phase
   # @param {DataSource} source
   # @param {String} ns
   # @param {Object} conds
-  _findOrCreateQuery: (phase, source, ns, conds) ->
+  _findOrCreateQuery: (phase, source, ns, conds, queryMethod) ->
     queriesByHash = @_queriesByPhase[phase] ||= {}
     hash = @_hash source, ns
     queries = queriesByHash[hash] ||= []
     for q in queries
       return q if deepEqual q.conds, conds
-    q = new DSQuery conds, @_queryMethod
+    q = new DSQuery conds, queryMethod
     queries.push q
     return q
   
   _hash: (source, ns) -> source._name + '.' + ns
 
-  _notifyPhase: (phase, logicalField, didNotFind) ->
+  _notifyPhase: (phase, logicalField, didntFind) ->
     queriesByHash = @_queriesByPhase[phase]
     for _, queries of queriesByHash
-      q.notifyAboutPrevQuery logicalField, didNotFind for q in queries
+      for q in queries
+        q.notifyAboutPrevQuery logicalField, didntFind
     return
+
+  _didntFind: ([metas, dataField]) ->
+    return true if metas is undefined || !metas.length
+    for {val} in metas
+      return true unless val?
+    return false
+  _didntFindOne: ([val, dataField]) -> ! val?
