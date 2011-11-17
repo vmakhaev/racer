@@ -202,7 +202,7 @@ LogicalSchema.static
   toOplog: (id, method, args) ->
     [ [@constructor.ns, {_id: id}, method, args] ]
 
-  create: (attrs, callback, oplog = LogicalSkema.oplog) ->
+  create: (attrs, callback, oplog = LogicalSchema.oplog) ->
     doc = new @(attrs, true, oplog)
     doc.save callback
 
