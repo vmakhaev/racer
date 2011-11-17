@@ -1,6 +1,5 @@
-{merge} = require '../util'
+{merge, deepCopy} = require '../util'
 Promise = require '../Promise'
-{deepCopy} = require '../util'
 
 AbstractQuery = module.exports = (@schema, criteria) ->
   @_conditions = {}

@@ -8,35 +8,33 @@ DSQueryDispatcher = module.exports = (@_queryMethod) ->
   return
 
 DSQueryDispatcher:: =
-  registerLogicalField: (logicalField, conds) ->
+  add: (logicalField, conds) ->
     unless logicalField.dataFields.length
-      console.warn """`#{logicalField.path}` is a declared logical field of
+      return console.warn """`#{logicalField.path}` is a declared logical field of
         schema `#{logicalField.schema._name}, but does not correspond to any
         data schema component. Please add it to one of your data schemas."""
-      return
 
-    self = this
-    queryMethod        = @_queryMethod
-    dataFieldFlow      = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
-    lastPhase          = dataFieldFlow.length - 1
-    switch queryMethod
+    dataFieldFlow = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
+    lastPhase     = dataFieldFlow.length - 1
+    switch queryMethod = @_queryMethod
       when 'find'    then onFound = @_onFind   ; noneFoundPredicate = @_didntFind
       when 'findOne' then onFound = @_onFindOne; noneFoundPredicate = @_didntFindOne
-    lFieldPromise      = new Promise # Promise for the future fetched data field value
-    dFieldPromCb       = (err, val, dataField) -> onFound err, val, dataField, lFieldPromise
+
+    lFieldPromise = new Promise # Promises the logical field value
     @_logicalFieldsPromises.push lFieldPromise
+    dFieldPromCb = (err, val, dataField) ->
+      onFound err, val, dataField, lFieldPromise
 
     # For each phase, place the data fields assoc with that phase
     # into a minimum number of queries. Fire those queries.
     for [dataFields, parallelCallback], phase in dataFieldFlow
       dFieldPromises = []
       for dField in dataFields
-        dFieldPromises.push dFieldProm = new Promise
-        dFieldProm.bothback dFieldPromCb
+        dFieldPromises.push dFieldProm = new Promise(bothback: dFieldPromCb)
         # TODO Transform conds based on dField and dField.schema
         if dField.query
           # Handles many or one inverse of Ref
-          _conds = dField.query._conditions
+          _conds = dField.query._conditions # typeof _conds[k] == 'function'
           _conds[k] = _conds[k](conds) for k, v of _conds
           conds = _conds
           fieldQueryMethod = dField.query.queryMethod
@@ -44,16 +42,19 @@ DSQueryDispatcher:: =
         q.add dField, dFieldProm
         # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
 
+      self = this
       phasePromise = Promise.parallel dFieldPromises...
       do (parallelCallback, phase) ->
         phasePromise.bothback (err, vals...) ->
+          # vals = [ [fetchedVal, dataField], ... ]
+          console.log vals
           # TODO Handle err
           parallelCallback vals... if parallelCallback
           noneFound = vals.every noneFoundPredicate
           if phase == lastPhase
             lFieldPromise.fulfill undefined if noneFound
           else
-            self._notifyPhase phase + 1, logicalField, noneFound
+            self._notifyNextPhase phase, logicalField, noneFound
 
   # @param {Function} callback(err, val)
   fire: (callback) ->
@@ -65,7 +66,7 @@ DSQueryDispatcher:: =
     return allPromise
 
   _onFindOne: (err, val, dataField, logicalFieldPromise) ->
-    # TODO handle err
+    return logicalPromise.error err if err
     # TODO Alternatively to logicalFieldPromise.fulfilled lazy check, we can eagerly remove dataFieldProm's callbacks upon an logicalFieldPromise fulfillment
     return if val is undefined || logicalFieldPromise.fulfilled
     val = dataField.type.uncast val if dataField.type?.uncast
@@ -90,14 +91,16 @@ DSQueryDispatcher:: =
     queries = queriesByHash[hash] ||= []
     for q in queries
       return q if deepEqual q.conds, conds
+    console.log "CONDS"
+    console.log conds
     q = new DSQuery conds, queryMethod
     queries.push q
     return q
   
   _hash: (source, ns) -> source._name + '.' + ns
 
-  _notifyPhase: (phase, logicalField, didntFind) ->
-    queriesByHash = @_queriesByPhase[phase]
+  _notifyNextPhase: (phase, logicalField, didntFind) ->
+    queriesByHash = @_queriesByPhase[phase + 1]
     for _, queries of queriesByHash
       for q in queries
         q.notifyAboutPrevQuery logicalField, didntFind

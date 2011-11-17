@@ -1,7 +1,7 @@
 should = require 'should'
 Mongo = require 'Schema/Mongo'
 mongo = null
-Schema = require 'Schema'
+Schema = require 'Schema/Logical/Schema'
 Blog = null
 Dog = null
 User = null
@@ -802,7 +802,7 @@ module.exports =
 
   # Inverse Refs as an Array
   '''should properly persist a relation that is the collection of documents that
-  point to me via a Ref field in their schemas''': (done) ->
+  point to me via a Ref field in their schemas @single''': (done) ->
     oplog = []
     tweetsAttrs = [
       { status: 'hasta' }
@@ -833,29 +833,72 @@ module.exports =
             --remaining || done()
     , oplog
 
-#  '''should properly retrieve a relation that is the collection of documents that
-#  point to me via a Ref field in their schemas @singles''': (done) ->
-#    oplog = []
-#    tweetsAttrs = [
-#      { status: 'hasta' }
-#      { status: 'la' }
-#      { status: 'vista' }
-#      { status: 'baby' }
-#    ]
-#    User.create
-#      name: 'Brian'
-#      tweets: tweetsAttrs
-#    , (err, user) ->
-#      should.equal null, err
-#      userId = user.get '_id'
-#      User.findOne _id: userId, {select: ['_id', 'tweets']}, (err, foundUser) ->
-#        should.equal null, err
-#        tweets = foundUser.get 'tweets'
-#        for tweet, i in tweets
-#          tweet.should.be.an.instanceof Tweet
-#          tweet.get('status').should.equal tweetsAttrs[i].status
-#        done()
-#    , oplog
+  '''should properly retrieve a relation that is the collection of documents that
+  point to me via a Ref field in their schemas @singles''': (done) ->
+    oplog = []
+    tweetsAttrs = [
+      { status: 'hasta' }
+      { status: 'la' }
+      { status: 'vista' }
+      { status: 'baby' }
+    ]
+    User.create
+      name: 'Brian'
+      tweets: tweetsAttrs
+    , (err, user) ->
+      should.equal null, err
+      userId = user.get '_id'
+      User.findOne _id: userId, {select: ['_id', 'tweets']}, (err, foundUser) ->
+        should.equal null, err
+        console.log foundUser
+        tweets = foundUser.get 'tweets'
+        for tweet, i in tweets
+          tweet.should.be.an.instanceof Tweet
+          tweet.get('status').should.equal tweetsAttrs[i].status
+        done()
+    , oplog
+
+  '''should auto-retrieve collections of documents that point (via a Ref field in
+  their schemas) to the documents in the immediate result-set of a find query @singles''': (done) ->
+    oplog = []
+    tweetsAttrsA = [
+      { status: 'hasta' }
+      { status: 'la' }
+      { status: 'vista' }
+    ]
+    tweetsAttrsB = [
+      { status: 'baby' }
+    ]
+    toCreateRemaining = 2
+    createCb = (err, user) ->
+      return if --toCreateRemaining
+      should.equal null, err
+      userId = user.get '_id'
+      User.find name: 'Brian', {select: ['_id', 'tweets']}, (err, users) ->
+        should.equal null, err
+
+        tweetsA = users[0].get 'tweets'
+        for tweet, i in tweetsA
+          tweet.should.be.an.instanceof Tweet
+          tweet.get('status').should.equal tweetsAttrsA[i].status
+
+        tweetsB = users[1].get 'tweets'
+        for tweet, i in tweetsB
+          tweet.should.be.an.instanceof Tweet
+          tweet.get('status').should.equal tweetsAttrsB[i].status
+
+        done()
+
+    User.create
+      name: 'Brian',
+      tweets: tweetsAttrsA
+    , createCb
+    , oplog
+    User.create
+      name: 'Brian',
+      tweets: tweetsAttrsB
+    , createCb
+    , oplog
 
   # Command building
   'should create a new update $set command for a single set': (done) ->

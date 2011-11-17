@@ -1,8 +1,9 @@
-Promise = module.exports = (callback) ->
+Promise = module.exports = (opts) ->
   @callbacks = []
   @errbacks = []
   @clearValueCallbacks = []
-  @callback callback if callback
+  if opts then for method, arg of opts
+    @[method] arg
   return
 
 Promise:: =
@@ -22,6 +23,7 @@ Promise:: =
     if @err
       throw new Error 'Promise has already erred'
     @err = err
+    throw err unless @errbacks.length
     callback.call scope, err for [callback, scope] in @errbacks
     @errbacks = []
     @

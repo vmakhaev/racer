@@ -1,7 +1,7 @@
-{merge} = require '../util'
-AbstractQuery = require './AbstractQuery'
-Promise = require '../Promise'
-DSQueryDispatcher = require './DSQueryDispatcher'
+{merge} = require '../../util'
+AbstractQuery = require '../AbstractQuery'
+Promise = require '../../Promise'
+DSQueryDispatcher = require '../DSQueryDispatcher'
 
 LogicalQuery = module.exports = (schema, criteria) ->
   AbstractQuery.call @, schema, criteria
@@ -29,15 +29,19 @@ LogicalQuery:: = merge new AbstractQuery(),
       # TODO Add this kind of logic to @_castConditions
       logicalFields = (RootLogicalSkema.lookupField path for path in selects)
     else
-      logicalFields = ([field, ''] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
+      remainder = ''
+      logicalFields = ([field, remainder] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
     queryMethod = @queryMethod
     qDispatcher = new DSQueryDispatcher queryMethod
+
     for [logicalField, ownerPathRelToRoot] in logicalFields
-      qDispatcher.registerLogicalField logicalField, conds
+      qDispatcher.add logicalField, conds
+
     firePromise = (new Promise).bothback fireCallback
     qDispatcher.fire (err, lFieldVals...) ->
-      # TODO create a version of Promise.parallel that returns an Object as val in (err, val)
+      return firePromise.error err if err
+      # TODO Maybe create a version of Promise.parallel that returns an Object as val in (err, val)
       switch queryMethod
         when 'findOne'
           attrs = {}
@@ -64,7 +68,7 @@ LogicalQuery:: = merge new AbstractQuery(),
               member[attrPath] = val
           result = (new RootLogicalSkema attrs, false for attrs in arrOfAttrs)
             
-      firePromise.resolve null, result
+      firePromise.fulfill result
 
     return firePromise
 

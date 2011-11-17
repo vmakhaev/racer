@@ -1,6 +1,6 @@
-Promise = require '../Promise'
-DataField = require './DataField'
-{merge} = require '../util'
+Promise = require '../../Promise'
+DataField = require './Field'
+{merge} = require '../../util'
 
 # @constructor DataSchema
 # @param {DataSource} source is the data source with which to associate this DataSchema
@@ -141,7 +141,7 @@ DataSchema:: =
         throw new Error 'Implement for other incoming method ' + cmd.method
     return true
 
-DataQuery = require './DataQuery'
+DataQuery = require './Query'
 for queryMethodName, queryFn of DataQuery::
   continue unless typeof queryFn is 'function'
   do (queryMethodName, queryFn) ->

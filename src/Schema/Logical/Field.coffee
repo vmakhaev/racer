@@ -1,4 +1,4 @@
-Schema = require './index'
+Schema = require './Schema'
 
 # Encapsulates the configuration of a field in a logical schema.
 # A field is a declared attribute on a custom Schema that is associated with a type
