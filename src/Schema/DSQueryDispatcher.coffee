@@ -1,9 +1,10 @@
-DSQuery = require './DSQuery'
+FindBuilder = require './Data/FindBuilder'
+FindOneBuilder = require './Data/FindOneBuilder'
 Promise = require '../Promise'
 {deepEqual} = require '../util'
 
 DSQueryDispatcher = module.exports = (@_queryMethod) ->
-  @_queriesByPhase = []
+  @_buildersByPhase = []
   @_logicalFieldsPromises = []
   return
 
@@ -14,8 +15,8 @@ DSQueryDispatcher:: =
         schema `#{logicalField.schema._name}, but does not correspond to any
         data schema component. Please add it to one of your data schemas."""
 
-    dataFieldFlow = logicalField.dataFieldFlow || logicalField.genDataFieldFlow()
-    lastPhase     = dataFieldFlow.length - 1
+    dataFieldReadPhases = logicalField.dataFieldReadPhases || logicalField.genDataFieldReadPhases()
+    lastPhase           = dataFieldReadPhases.length - 1
     switch queryMethod = @_queryMethod
       when 'find'    then onFound = @_onFind   ; noneFoundPredicate = @_didntFind
       when 'findOne' then onFound = @_onFindOne; noneFoundPredicate = @_didntFindOne
@@ -26,8 +27,9 @@ DSQueryDispatcher:: =
       onFound err, val, dataField, lFieldPromise
 
     # For each phase, place the data fields assoc with that phase
-    # into a minimum number of queries. Fire those queries.
-    for [dataFields, parallelCallback], phase in dataFieldFlow
+    # into a minimum number of queries. Wire those queries together
+    # so that certain queries trigger other queries.
+    for [dataFields, parallelCallback], phase in dataFieldReadPhases
       dFieldPromises = []
       for dField in dataFields
         dFieldPromises.push dFieldProm = new Promise(bothback: dFieldPromCb)
@@ -37,8 +39,8 @@ DSQueryDispatcher:: =
           _conds = dField.query._conditions # typeof _conds[k] == 'function'
           _conds[k] = _conds[k](conds) for k, v of _conds
           conds = _conds
-          fieldQueryMethod = dField.query.queryMethod
-        q = @_findOrCreateQuery phase, dField.source, dField.ns, conds, fieldQueryMethod || queryMethod
+          queryMethod = dField.query.queryMethod
+        q = @_findOrCreateQueryBuilder phase, dField.source, dField.ns, conds, queryMethod
         q.add dField, dFieldProm
         # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
 
@@ -58,9 +60,11 @@ DSQueryDispatcher:: =
 
   # @param {Function} callback(err, val)
   fire: (callback) ->
-    queriesByHash = @_queriesByPhase[0]
-    for _, queries of queriesByHash
-      q.fire() for q in queries
+    buildersByHash = @_buildersByPhase[0]
+    for _, builders of buildersByHash
+      for builder in builders
+        query = builder.toQuery()
+        query.fire builder.queryCallback
     allPromise = Promise.parallel @_logicalFieldsPromises...
     allPromise.bothback callback if callback
     return allPromise
@@ -85,25 +89,27 @@ DSQueryDispatcher:: =
   # @param {DataSource} source
   # @param {String} ns
   # @param {Object} conds
-  _findOrCreateQuery: (phase, source, ns, conds, queryMethod) ->
-    queriesByHash = @_queriesByPhase[phase] ||= {}
+  _findOrCreateQueryBuilder: (phase, source, ns, conds, queryMethod) ->
+    buildersByHash = @_buildersByPhase[phase] ||= {}
     hash = @_hash source, ns
-    queries = queriesByHash[hash] ||= []
-    for q in queries
-      return q if deepEqual q.conds, conds
+    builders = buildersByHash[hash] ||= []
+    for qb in builders
+      return qb if deepEqual qb.conds, conds
     console.log "CONDS"
     console.log conds
-    q = new DSQuery conds, queryMethod
-    queries.push q
-    return q
+    qb = switch queryMethod
+      when 'find'    then FindBuilder conds
+      when 'findOne' then FindOneBuilder conds
+    builders.push qb
+    return qb
   
   _hash: (source, ns) -> source._name + '.' + ns
 
   _notifyNextPhase: (phase, logicalField, didntFind) ->
-    queriesByHash = @_queriesByPhase[phase + 1]
-    for _, queries of queriesByHash
-      for q in queries
-        q.notifyAboutPrevQuery logicalField, didntFind
+    buildersByHash = @_buildersByPhase[phase + 1]
+    for _, builders of buildersByHash
+      for qb in builders
+        qb.notifyAboutPrevQuery logicalField, didntFind
     return
 
   _didntFind: ([metas, dataField]) ->

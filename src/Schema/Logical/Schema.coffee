@@ -218,13 +218,27 @@ LogicalSchema.static
     plugin @, opts
     return @
 
-  # defineReadFlow(callback)
-  # Invoking with this fn signature will result in defining
+  # Defines which data source to try first, second, etc.
+  # for fetching the values of specific fields. If there 
+  # isn't a flow defined for a given field, the querying
+  # implementation will use a read flow defined for the
+  # LogicalSchema to which the field belongs.
+  # 
+  # Invoking this fn signature will result in defining
   # a fallback read flow for the entire LogicalSchema
+  #   defineReadFlow(function (flow) {
+  #     flow.
+  #       first(mongo, callbackA).
+  #       then(mysql, callbackB);
+  #   });
   #
-  # defineReadFlow(field, callback)
-  # Otherwise, invoking with this fn signature will result 
+  # Otherwise, invoking this fn signature will result 
   # in defining a read flow for the given fields
+  #   defineReadFlow(fieldA, fieldB, function (flow) {
+  #     flow.
+  #       first(mongo, redis, callbackA).
+  #       then(mysql, callbackB);
+  #   });
   defineReadFlow: (args...) ->
     callback    = args.pop()
     fieldNames  = args
