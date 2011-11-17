@@ -53,5 +53,10 @@ racer = module.exports =
   # Returns Middleware adapter for Connect sessions
   session: session
 
+  # For creating your own DataSources
+  DataSource: require './Schema/DataSource'
+
+  Schema: require './Schema/Logical/Schema'
+
 Object.defineProperty racer, 'version',
   get: -> JSON.parse(fs.readFileSync __dirname + '/../package.json', 'utf8').version
