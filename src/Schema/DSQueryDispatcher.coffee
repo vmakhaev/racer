@@ -64,7 +64,8 @@ DSQueryDispatcher:: =
     for _, builders of buildersByHash
       for builder in builders
         query = builder.toQuery()
-        query.fire builder.queryCallback
+        query.fire (err, json) ->
+          builder.queryCallback err, json
     allPromise = Promise.parallel @_logicalFieldsPromises...
     allPromise.bothback callback if callback
     return allPromise
