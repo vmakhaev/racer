@@ -1,6 +1,6 @@
-{merge} = require '../util'
-DataSchema = require './Data/Schema'
-Promise = require '../Promise'
+{merge} = require '../../util'
+DataSchema = require '../Data/Schema'
+Promise = require '../../Promise'
 
 # Custom DataSource classes are defined via:
 # DataSource.extend({

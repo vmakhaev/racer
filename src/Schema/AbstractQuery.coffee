@@ -1,6 +1,7 @@
 {merge, deepCopy} = require '../util'
 Promise = require '../Promise'
 
+# LogicalQuery and DataQuery inherit from AbstractQuery
 AbstractQuery = module.exports = (@schema, criteria) ->
   @_conditions = {}
   @_selects = []
