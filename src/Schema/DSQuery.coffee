@@ -17,15 +17,13 @@ DSQuery:: =
     logicalFields  = @_logicalFields
     logicalPath    = logicalField.path
     dataFields     = logicalFields[logicalPath]
-    _includeFields = @_includeFields
+    includeFields = @_includeFields
     for dataField in dataFields
-      if didNotFind then delete _includeFields[dataField.path]
+      if didNotFind then delete includeFields[dataField.path]
     delete logicalFields[logicalPath]
     @fire() unless Object.keys(logicalFields).length
     return
 
-  # @param {DataField} dataField
-  # @param {Promise} dataFieldProm
   add: (dataField, dataFieldProm) ->
     @source ||= dataField.source
     fieldPath = dataField.path
@@ -35,33 +33,37 @@ DSQuery:: =
     dataFields.push dataField
 
   fire: ->
-    fields = @_includeFields
-    anyFields = false
-    for k of fields
-      anyFields = true
-      {ns} = fields[k]
-      break
+    fields        = @_includeFields
     fieldPromises = @_fieldPromises
-    if anyFields
+
+    # Extract field paths and the ns
+    fieldPaths = []
+    for k of fields
+      {ns, path} = fields[k]
+      fieldPaths.push path
+
+    if fieldPaths.length
       queryMethod = @_queryMethod
       DataSkema   = @source.dataSchemasWithNs[ns]
-      return DataSkema[queryMethod] @conds, {fields}, (err, json) ->
-        if queryMethod == 'find'
-          for path, field of fields
-            if field.type.isPkey
-              pkeyPath = path
-              break
-          resolveToByPath = {}
-          for mem, i in json
-            pkeyVal = mem[pkeyPath]
-            for path, val of mem
-              resolveToByPath[path] ||= []
-              resolveToByPath[path][i] = {val, pkeyVal}
-          for path, promise of fieldPromises
-            promise.resolve err, resolveToByPath[path], fields[path]
-        else
-          for path, promise of fieldPromises
-            promise.resolve err, json[path], fields[path]
+      return DataSkema[queryMethod] @conds, {select: fieldPaths}, (err, json) ->
+        switch queryMethod
+          when 'find'
+            for path, field of fields
+              if field.type.isPkey
+                pkeyPath = path
+                break
+            throw new Error 'Missing pkey path' unless pkeyPath
+            resolveToByPath = {}
+            for mem, i in json
+              pkeyVal = mem[pkeyPath]
+              for path, val of mem
+                resolveToByPath[path] ||= []
+                resolveToByPath[path][i] = {val, pkeyVal}
+            for path, promise of fieldPromises
+              promise.resolve err, resolveToByPath[path], fields[path]
+          when 'findOne'
+            for path, promise of fieldPromises
+              promise.resolve err, json[path], fields[path]
 
     # TODO Consider the following code. Remove or complete?
     throw new Error 'Unimplemented'

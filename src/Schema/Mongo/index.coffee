@@ -2,9 +2,9 @@ DataSource = require '../DataSource'
 types = require './types'
 CommandSequence = require '../CommandSequence'
 Command = require '../Command'
-Schema = require '../index'
-DataSchema = require '../DataSchema'
-DataQuery = require '../DataQuery'
+Schema = require '../Logical/Schema'
+DataSchema = require '../Data/Schema'
+DataQuery = require '../Data/Query'
 Promise = require '../../Promise'
 
 # Important roles are:
@@ -18,7 +18,8 @@ MongoSource = module.exports = DataSource.extend
 
   types: types
 
-  # Where the magical interpretation happens of the right-hand-side vals of fields in, e.g.,
+  # Deduces the correct type based on the right-hand-side vals of
+  # field configuration in data schema definitions, e.g.,
   #     CustomSchema.source(source, ns, {
   #       fieldName: descriptorToInfer
   #       fieldB:    anotherDescriptor
@@ -105,7 +106,7 @@ MongoSource = module.exports = DataSource.extend
                       throw new Error "Command method #{cmd.method} isn't supported in this context"
           fieldParams:
             ns: DataSkema.ns
-            query: query
+            query: query # Used in DSQueryDispatcher
             fkey: fkey
             pkey: pkey
         }

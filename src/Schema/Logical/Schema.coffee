@@ -1,22 +1,22 @@
-Promise = require '../Promise'
+Promise = require '../../Promise'
 {EventEmitter} = require 'events'
-{merge} = require '../util'
-FlowBuilder = require './FlowBuilder'
-CommandSequence = require './CommandSequence'
+{merge} = require '../../util'
+FlowBuilder = require '../FlowBuilder'
+CommandSequence = require '../CommandSequence'
 operation = require './operation'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, virtual
 # attributes, and methods encapsulating business logic.
-Schema = module.exports = ->
+LogicalSchema = module.exports = ->
   EventEmitter.call @
   return
 
-Schema._schemas    = {} # Maps schema namespaces -> Schema subclasses
-Schema._sources    = {} # Maps source names -> DataSource instances
-Schema._subclasses = []
+LogicalSchema._schemas    = {} # Maps schema namespaces -> LogicalSchema subclasses
+LogicalSchema._sources    = {} # Maps source names -> DataSource instances
+LogicalSchema._subclasses = []
 
-Schema.extend = (name, ns, config) ->
+LogicalSchema.extend = (name, ns, config) ->
   ParentClass = @
   # @constructor
   # @param {String -> Object} attrs maps path names to their values
@@ -25,7 +25,7 @@ Schema.extend = (name, ns, config) ->
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
   #     object, we keep an oplog, which we can leverage better at the Adapter
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
-  SubClass = (attrs, @isNew = true, @oplog = Schema.oplog || []) ->
+  SubClass = (attrs, @isNew = true, @oplog = LogicalSchema.oplog || []) ->
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
@@ -65,7 +65,7 @@ Schema.extend = (name, ns, config) ->
 
   # Copy over base static methods
   for static in ['extend', 'static']
-    SubClass[static] = Schema[static]
+    SubClass[static] = LogicalSchema[static]
 
   # Copy over all dynamically generated static methods
   SubClass._statics = {}
@@ -79,7 +79,7 @@ Schema.extend = (name, ns, config) ->
 
   # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
   for fieldName, descriptor of config
-    field = Schema._createFieldFrom descriptor, fieldName
+    field = LogicalSchema._createFieldFrom descriptor, fieldName
     bootstrapField = (field, fieldName, SubClass) ->
       field.sources = [] # TODO Are we using field.sources?
       field.path    = fieldName
@@ -99,11 +99,11 @@ Schema.extend = (name, ns, config) ->
     return val if val instanceof @
     throw new Error val + ' is neither an Object nor a ' + @_name
 
-  Schema._schemaPromises[name]?.fulfill SubClass
+  LogicalSchema._schemaPromises[name]?.fulfill SubClass
 
-  return Schema._schemas[ns] = SubClass
+  return LogicalSchema._schemas[ns] = SubClass
 
-Schema.static = (name, fn) ->
+LogicalSchema.static = (name, fn) ->
   if name.constructor == Object
     for _name, fn of name
       @static _name, fn
@@ -118,9 +118,9 @@ Schema.static = (name, fn) ->
       decorateDescendants SubClass._subclasses, name, fn
   decorateDescendants @_subclasses, name, fn
   return @
-Schema._statics = {}
+LogicalSchema._statics = {}
 
-Schema.fromPath = (path) ->
+LogicalSchema.fromPath = (path) ->
   pivot = path.indexOf '.'
   ns    = path.substring 0, pivot
   path  = path.substring pivot+1
@@ -134,8 +134,8 @@ Schema.fromPath = (path) ->
 #
 # @param {Array} oplog
 # @param {Function} callback(err, doc)
-# @param {Schema} doc that originates the _applyOps call
-Schema._applyOps = (oplog, callback) ->
+# @param {LogicalSchema} doc that originates the _applyOps call
+LogicalSchema._applyOps = (oplog, callback) ->
   cmdSeq = @_oplogToCommandSequence oplog
   return cmdSeq.fire (err, cid, extraAttrs) ->
     return callback(err || null)
@@ -144,11 +144,11 @@ Schema._applyOps = (oplog, callback) ->
 # command set possible.
 # TODO This should be able to handle more refined write flow control
 # TODO Handle nested paths
-Schema._oplogToCommandSequence = (oplog) ->
+LogicalSchema._oplogToCommandSequence = (oplog) ->
   cmdSeq = new CommandSequence
   for op in oplog
     {doc, ns, conds, method, path, args} = operation.splat op
-    LogicalSkema = Schema._schemas[ns]
+    LogicalSkema = LogicalSchema._schemas[ns]
     {dataFields} = logicalField = LogicalSkema.fields[path]
     # TODO How to modify for STM? Need rollback mechanism
     for dataField in dataFields
@@ -158,7 +158,7 @@ Schema._oplogToCommandSequence = (oplog) ->
       source[method] cmdSeq, doc, dataField, conds, args...
   return cmdSeq
 
-Schema.static
+LogicalSchema.static
   # TODO Do we even need dataSchemas as a static here?
   dataSchemas: []
   # We use this to define a "data source schema" and link it to
@@ -184,8 +184,8 @@ Schema.static
     # else
     # (source, ns, fieldsConf, virtualsConf)
 
-    Schema._sources[source._name] ||= source
-    dataSchema = source.createDataSchema {LogicalSchema: @, ns}, fieldsConf, virtualsConf
+    LogicalSchema._sources[source._name] ||= source
+    dataSchema = source.createDataSchema {LogicalSkema: @, ns}, fieldsConf, virtualsConf
     @dataSchemas.push dataSchema
 
 #      # In case data schema already exists
@@ -202,17 +202,17 @@ Schema.static
   toOplog: (id, method, args) ->
     [ [@constructor.ns, {_id: id}, method, args] ]
 
-  create: (attrs, callback, oplog = Schema.oplog) ->
+  create: (attrs, callback, oplog = LogicalSkema.oplog) ->
     doc = new @(attrs, true, oplog)
     doc.save callback
 
   update: (conds, attrs, callback) ->
     oplog = ([@ns, conds, 'set', path, val] for path, val of attrs)
-    Schema._applyOps oplog, callback
+    LogicalSchema._applyOps oplog, callback
 
   destroy: (conds, callback) ->
     oplog = [ [@ns, conds] ]
-    Schema._applyOps oplog, callback
+    LogicalSchema._applyOps oplog, callback
 
   plugin: (plugin, opts) ->
     plugin @, opts
@@ -220,7 +220,7 @@ Schema.static
 
   # defineReadFlow(callback)
   # Invoking with this fn signature will result in defining
-  # a fallback read flow for the entire Logical Schema
+  # a fallback read flow for the entire LogicalSchema
   #
   # defineReadFlow(field, callback)
   # Otherwise, invoking with this fn signature will result 
@@ -261,18 +261,18 @@ Schema.static
     return obj
 
 # Copy over where, find, findOne, etc from Query::,
-# so we can do e.g., Schema.find, Schema.findOne, etc
-LogicalQuery = require './LogicalQuery'
+# so we can do e.g., LogicalSchema.find, LogicalSchema.findOne, etc
+LogicalQuery = require './Query'
 for queryMethodName, queryFn of LogicalQuery::
   continue unless typeof queryFn is 'function'
   do (queryMethodName, queryFn) ->
-    Schema.static queryMethodName, (args...)->
+    LogicalSchema.static queryMethodName, (args...)->
       query = new LogicalQuery @
       return queryFn.apply query, args
 
-Schema:: = new EventEmitter
-merge Schema::,
-  constructor: Schema
+LogicalSchema:: = new EventEmitter
+merge LogicalSchema::,
+  constructor: LogicalSchema
 
   toJSON: -> @_doc
 
@@ -300,7 +300,7 @@ merge Schema::,
       conds = {_id}
     else
       conds = __cid__: @cid
-    if val instanceof Schema
+    if val instanceof LogicalSchema
       if fkey = val.get('_id')
         setTo = _id: fkey
       else
@@ -311,7 +311,7 @@ merge Schema::,
       # document represented in the next op
     else
       @oplog.push [@, @constructor.ns, conds, 'set', attr, val]
-    # Otherwise this operation is stored in val's oplog, since val is a Schema document
+    # Otherwise this operation is stored in val's oplog, since val is a LogicalSchema document
     if @_atomic then @save callback
     return @
 
@@ -329,7 +329,7 @@ merge Schema::,
   destroy: (callback) ->
     if _id = @_doc._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'destroy']
-    Schema._applyOps oplog, callback
+    LogicalSchema._applyOps oplog, callback
 
   push: (attr, vals..., callback) ->
     if typeof callback isnt 'function'
@@ -349,7 +349,7 @@ merge Schema::,
     else
       conds = __cid__: @cid
 
-    if field.type.memberType.prototype instanceof Schema
+    if field.type.memberType.prototype instanceof LogicalSchema
       setTo = []
       for mem, i in vals
         setTo[i] = cid: mem.cid
@@ -364,7 +364,7 @@ merge Schema::,
   save: (callback) ->
     oplog = @oplog.slice()
     @oplog.reset()
-    Schema._applyOps oplog, (err) =>
+    LogicalSchema._applyOps oplog, (err) =>
       return callback err if err
       @isNew = false
       callback null, @
@@ -378,7 +378,7 @@ merge Schema::,
     return if errors.length then errors else true
 
 
-Schema.static 'mixin', (mixin) ->
+LogicalSchema.static 'mixin', (mixin) ->
   {init, static, proto} = mixin
   @static static if static
   if proto for k, v of proto
@@ -386,7 +386,7 @@ Schema.static 'mixin', (mixin) ->
   @_inits.push init if init
 
 contextMixin = require './mixin.context'
-Schema.mixin contextMixin
+LogicalSchema.mixin contextMixin
 
 actLikeTypeMixin =
   static:
@@ -398,18 +398,18 @@ for methodName, method of Type::
   continue if methodName == 'extend'
   actLikeTypeMixin.static[methodName] = method
 
-Schema.mixin actLikeTypeMixin
+LogicalSchema.mixin actLikeTypeMixin
 
-# Email = Schema.type 'Email',
+# Email = LogicalSchema.type 'Email',
 #   extend: String
 #
 # Email.validate (val, callback) ->
 #   # ...
 #
-# Schema.type 'Number',
+# LogicalSchema.type 'Number',
 #   get: (val, doc) -> parseInt val, 10
 #   set: (val, doc) -> parseInt val, 10
-Schema.type = (typeName, config) ->
+LogicalSchema.type = (typeName, config) ->
   return type if type = @_types[typeName]
 
   if parentType = config.extend
@@ -417,9 +417,9 @@ Schema.type = (typeName, config) ->
   type = @_types[typeName] = new Type typeName, config
 
   return type
-Schema._types = {}
+LogicalSchema._types = {}
 
-Schema._createFieldFrom = (descriptor, fieldName) ->
+LogicalSchema._createFieldFrom = (descriptor, fieldName) ->
   if descriptor.constructor != Object
     type = @inferType descriptor
     return type if type instanceof Promise
@@ -433,7 +433,7 @@ Schema._createFieldFrom = (descriptor, fieldName) ->
     type = @inferType type
     delete descriptor.$type
     # Will be a Promise when the descriptor involves a
-    # yet-to-be-defined Schema
+    # yet-to-be-defined LogicalSchema
     return type if type instanceof Promise
     field = type.createField()
     for method, arg of descriptor
@@ -445,7 +445,7 @@ Schema._createFieldFrom = (descriptor, fieldName) ->
 
 # Factory method returning new Field instances
 # generated from factory create new Type instances
-Schema.inferType = (descriptor) ->
+LogicalSchema.inferType = (descriptor) ->
   if Array.isArray descriptor
     arrayType         = @type 'Array'
     concreteArrayType = Object.create arrayType
@@ -467,37 +467,37 @@ Schema.inferType = (descriptor) ->
     return @_schemaPromise descriptor
 
   return descriptor if descriptor           instanceof Type ||
-                       descriptor.prototype instanceof Schema
+                       descriptor.prototype instanceof LogicalSchema
 
   throw new Error 'Unsupported descriptor ' + descriptor
 
-# We use this when we want to reference a Schema
+# We use this when we want to reference a LogicalSchema
 # that we have not yet defined but that we need for another
-# Schema that we are defining at the moment.
+# LogicalSchema that we are defining at the moment.
 # e.g.,
-# Schema.extend 'User', 'users',
+# LogicalSchema.extend 'User', 'users',
 #   tweets: ['Tweet']
 #
-# Schema.inferType delegates to the following Schema promise code
-Schema._schemaPromise = (schemaName) ->
+# LogicalSchema.inferType delegates to the following LogicalSchema promise code
+LogicalSchema._schemaPromise = (schemaName) ->
   # Cache only one promise per schema
   schemaPromises = @_schemaPromises
   return promise if promise = schemaPromises[schemaName]
   promise = schemaPromises[schemaName] = new Promise
-  schemasToDate = Schema._schemas
+  schemasToDate = LogicalSchema._schemas
   for ns, schema of schemasToDate
     if schema._name == schemaName
       promise.fulfill schema
       return promise
   return promise
-Schema._schemaPromises = {}
+LogicalSchema._schemaPromises = {}
 
-Schema.type 'String',
+LogicalSchema.type 'String',
   cast: (val) -> val.toString()
 
-Schema.type 'Number',
+LogicalSchema.type 'Number',
   cast: (val) -> parseFloat val, 10
 
-Schema.type 'Array',
+LogicalSchema.type 'Array',
   cast: (list, oplog) ->
     return (@memberType.cast member, oplog for member in list)
