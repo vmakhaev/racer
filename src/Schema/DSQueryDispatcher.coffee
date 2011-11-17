@@ -40,8 +40,8 @@ DSQueryDispatcher:: =
           _conds[k] = _conds[k](conds) for k, v of _conds
           conds = _conds
           queryMethod = dField.query.queryMethod
-        q = @_findOrCreateQueryBuilder phase, dField.source, dField.ns, conds, queryMethod
-        q.add dField, dFieldProm
+        qb = @_findOrCreateQueryBuilder phase, dField.source, dField.ns, conds, queryMethod
+        qb.add dField, dFieldProm
         # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
 
       self = this
@@ -98,8 +98,8 @@ DSQueryDispatcher:: =
     console.log "CONDS"
     console.log conds
     qb = switch queryMethod
-      when 'find'    then FindBuilder conds
-      when 'findOne' then FindOneBuilder conds
+      when 'find'    then new FindBuilder conds
+      when 'findOne' then new FindOneBuilder conds
     builders.push qb
     return qb
   
