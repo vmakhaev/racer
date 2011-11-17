@@ -1,6 +1,6 @@
-{merge} = require '../util'
-AbstractQuery = require './AbstractQuery'
-Promise = require '../Promise'
+{merge} = require '../../util'
+AbstractQuery = require '../AbstractQuery'
+Promise = require '../../Promise'
 
 DataQuery = module.exports = (schema, criteria) ->
   AbstractQuery.call @, schema, criteria

@@ -1,5 +1,5 @@
 {merge} = require '../util'
-DataSchema = require './DataSchema'
+DataSchema = require './Data/Schema'
 Promise = require '../Promise'
 
 # Custom DataSource classes are defined via:
@@ -41,7 +41,7 @@ DataSource:: =
   #     descriptor can be any number of syntactic representations of the 
   #     type the field is.
   # @param {Object} @optional virtualsConf
-  createDataSchema: ({name, ns, LogicalSchema: LogicalSkema}, fieldsConf, virtualsConf) ->
+  createDataSchema: ({name, ns, LogicalSkema}, fieldsConf, virtualsConf) ->
     if LogicalSkema
       ns ||= LogicalSkema.ns unless ns == false
       name ||= LogicalSkema._name

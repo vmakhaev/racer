@@ -1,4 +1,4 @@
-{merge} = require '../util'
+{merge} = require '../../util'
 
 DataField = module.exports = (@type, opts) ->
   merge @, opts
