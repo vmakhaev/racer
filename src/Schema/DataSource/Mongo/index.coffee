@@ -1,11 +1,9 @@
-DataSource = require '../DataSource'
+{DataSource, Schema} = racer = require '../../../racer'
 types = require './types'
-CommandSequence = require '../CommandSequence'
-Command = require '../Command'
-Schema = require '../Logical/Schema'
-DataSchema = require '../Data/Schema'
-DataQuery = require '../Data/Query'
-Promise = require '../../Promise'
+Command = require '../../Command'
+DataSchema = require '../../Data/Schema'
+DataQuery = require '../../Data/Query'
+Promise = require '../../../Promise'
 
 # Important roles are:
 # - Convert oplog to db queries
