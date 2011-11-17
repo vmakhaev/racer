@@ -3,12 +3,13 @@ Schema = require './Schema'
 # Encapsulates the configuration of a field in a logical schema.
 # A field is a declared attribute on a custom Schema that is associated with a type
 # and configuration specific to the association of the type to this attribute -- e.g.,
-# define custom validations at the Field level that do not
-# pollute the validation definitions set at the Type or Schema level.
+# define custom validations at the LogicalField level that do not
+# pollute the validation definitions set at the LogicalType or LogicalSchema
+# level.
 
-# @constructor Field
+# @constructor LogicalField
 # @param {Schema|Type} the type of this field
-Field = module.exports = (@type) ->
+LogicalField = module.exports = (@type) ->
   @validators = []
   @dataFields = []
   @isRelationship = @type?.prototype instanceof Schema || (
@@ -19,7 +20,7 @@ Field = module.exports = (@type) ->
   )
   return
 
-Field:: =
+LogicalField:: =
   schema: null
   path: null
 
@@ -46,16 +47,16 @@ Field:: =
 
     return if errors.length then errors else true
 
-  genDataFieldFlow: ->
-    return dataFieldFlow if dataFieldFlow = @dataFieldFlow
-    dataFieldFlow = []
+  genDataFieldReadPhases: ->
+    return dataFieldReadPhases if dataFieldReadPhases = @dataFieldReadPhases
+    dataFieldReadPhases = @dataFieldReadPhases = []
     dataFields    = @dataFields
 
     if readFlow = @readFlow || @schema.readFlow
-      for [sources, parallelCallback] in readFlow
-        matchingDFields = (dField for dField in dataFields when -1 != sources.indexOf dField.source)
-        dataFieldFlow.push [matchingDFields, parallelCallback]
+      for [sources, parallelCb] in readFlow
+        matches = (f for f in dataFields when -1 != sources.indexOf f.source)
+        dataFieldReadPhases.push [matches, parallelCb]
     else
       console.warn "Source lookup order not explicitly defined for this logical field `#{@path}` or its logical schema `#{@schema._name}`. Falling back to parallel fetching of `#{@path}` dataFields"
-      dataFieldFlow.push [dataFields]
-    return @dataFieldFlow = dataFieldFlow
+      dataFieldReadPhases.push [dataFields]
+    return dataFieldReadPhases

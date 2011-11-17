@@ -173,6 +173,9 @@ MongoSource = module.exports = DataSource.extend
       return false
 
     # Virtual data types modify existing commands, so don't create a matchingCmd
+    # TODO Make matchingCmd findOrCreate happen inside the dataType. Instead, here,
+    #      command creation happens in 2 places - (1) here if not a Virtual type
+    #      or (2) in Virtual type's translateSet.
     unless dataType._name == 'Virtual'
       unless matchingCmd
         if cid = conds.__cid__
