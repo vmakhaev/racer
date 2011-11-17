@@ -23,5 +23,7 @@ FindBuilder:: = merge new DataQueryBuilder('find'),
       for path, val of member
         resolveToByPath[path] ||= []
         resolveToByPath[path][i] = {val, pkeyVal}
+    fieldPromises = @_fieldPromises
+    fields = @_fields
     for path, promise of fieldPromises
       promise.resolve err, resolveToByPath[path], fields[path]

@@ -33,7 +33,6 @@ DataQueryBuilder:: =
 
   toQuery: ->
     fields        = @_includeFields
-    fieldPromises = @_fieldPromises
     queryMethod   = @_queryMethod
 
     fieldPaths = (path for _, {path} of fields)
