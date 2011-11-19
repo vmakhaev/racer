@@ -130,6 +130,9 @@ exports.Ref = baseType.extend 'Ref',
   cast: (val) ->
     return @pkeyType.cast val
 
+  uncast: (val) ->
+    return @pkeyType.uncast val
+
   createField: (opts) ->
     field = new DataField @, opts
     field.deref = (pkeyVal, callback) ->

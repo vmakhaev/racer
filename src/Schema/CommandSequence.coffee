@@ -101,7 +101,7 @@ CommandSequence:: =
             callback null
     else
       currPosPromises = (new Promise for _ in cmds)
-      posPromise = Promise.parallel currPosPromises...
+      posPromise = Promise.parallel currPosPromises
       if nextPos = currPos.next
         nextProm = posPromise
         @_setupPromises callback, nextPos, nextProm

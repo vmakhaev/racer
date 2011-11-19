@@ -25,7 +25,8 @@ LogicalSchema.extend = (name, ns, config) ->
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
   #     object, we keep an oplog, which we can leverage better at the Adapter
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
-  SubClass = (attrs, @isNew = true, @oplog = LogicalSchema.oplog || []) ->
+  SubClass = (attrs, @isNew = true, oplog, assignerDoc) ->
+    @oplog = oplog || LogicalSchema.oplog || []
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
@@ -41,7 +42,8 @@ LogicalSchema.extend = (name, ns, config) ->
       # 1st conditional term: Cast defined fields; ad hoc fields skip this
       # 2nd conditional term: Don't cast undefineds
       if field && attrVal
-        attrVal = field.cast attrVal, if @isNew then @oplog else null
+        oplog = if @isNew then @oplog else null
+        attrVal = field.cast(attrVal, oplog, assignerDoc || @)
       if @isNew
         @set attrName, attrVal
       else
@@ -92,11 +94,17 @@ LogicalSchema.extend = (name, ns, config) ->
     else
       bootstrapField field, fieldName, SubClass
 
-  SubClass.cast = (val, oplog) ->
+  SubClass.cast = (val, oplog, assignerDoc) ->
     if val.constructor == Object
-      return new @ val, true, oplog if oplog
-      return new @ val
+      # TODO Should the 2nd args here always be true?
+      return new @ val, true, oplog, assignerDoc if oplog
+      return new @ val, true, undefined, assignerDoc
     return val if val instanceof @
+    # TODO Generalize this to work with any primary key name besides _id
+    # When the val is a primary key value, then
+    # do a circular reference
+    if assignerDoc && (val == assignerDoc.get '_id')
+      return assignerDoc
     throw new Error val + ' is neither an Object nor a ' + @_name
 
   LogicalSchema._schemaPromises[name]?.fulfill SubClass
@@ -279,7 +287,7 @@ LogicalSchema.static
 LogicalQuery = require './Query'
 for queryMethodName, queryFn of LogicalQuery::
   continue unless typeof queryFn is 'function'
-  do (queryMethodName, queryFn) ->
+  do (queryFn) ->
     LogicalSchema.static queryMethodName, (args...)->
       query = new LogicalQuery @
       return queryFn.apply query, args
@@ -293,7 +301,8 @@ merge LogicalSchema::,
   _assignAttrs: (name, val, obj = @_doc) ->
     {fields, _name} = LogicalSkema = @constructor
     if field = fields[name]
-      return obj[name] = field.cast val, if @isNew then @oplog else null
+      oplog = if @isNew then @oplog else null
+      return obj[name] = field.cast val, oplog, @
     
     if val.constructor == Object
       for k, v of val
@@ -513,5 +522,5 @@ LogicalSchema.type 'Number',
   cast: (val) -> parseFloat val, 10
 
 LogicalSchema.type 'Array',
-  cast: (list, oplog) ->
-    return (@memberType.cast member, oplog for member in list)
+  cast: (list, oplog, assignerDoc) ->
+    return (@memberType.cast member, oplog, assignerDoc for member in list)

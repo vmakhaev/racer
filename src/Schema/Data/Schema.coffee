@@ -43,7 +43,7 @@ DataSchema = module.exports = (@source, @name, ns, LogicalSkema, conf, virtualsC
 bootstrapField = (dataField, fieldName, fields, LogicalSkema, logicalPath) ->
   fields[fieldName] = dataField
   if LogicalSkema
-    # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in DSQueryDispatcher
+    # TODO Place console.warn here? i.e., if dataField is undefined? See console.warn in QueryDispatcher
     LogicalSkema.fields[logicalPath].dataFields.push dataField
 
 DataSchema:: =

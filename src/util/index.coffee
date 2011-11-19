@@ -86,7 +86,7 @@ module.exports =
     return true
 
   # TODO Test this
-  deepCopy: (obj) ->
+  deepCopy: deepCopy = (obj) ->
     if obj.constructor == Object
       ret = {}
       ret[k] = deepCopy v for k, v of obj
