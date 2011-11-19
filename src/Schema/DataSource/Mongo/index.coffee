@@ -102,11 +102,25 @@ MongoSource = module.exports = DataSource.extend
                     when 'update' then cmd.val.$set[fkey] = fkeyVal
                     else
                       throw new Error "Command method #{cmd.method} isn't supported in this context"
+            uncast: (arr) ->
+              for json, i in arr
+                arr[i] = DataSkema.uncast json
+              return arr
           fieldParams:
             ns: DataSkema.ns
-            query: query # Used in DSQueryDispatcher
             fkey: fkey
             pkey: pkey
+            queryMethod: 'find'
+            query: query
+            querify: (conds) ->
+              conds = @conds conds
+              _query = @query.clone()
+              _query._conditions = conds
+              return _query
+            conds: (conds) ->
+              _conds = @query._conditions
+              _conds[k] = _conds[k](conds) for k of _conds
+              return _conds
         }
 
       # TODO Deprecate the following code?

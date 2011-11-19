@@ -116,7 +116,7 @@ module.exports =
       p1Val = val
     p2.callback (val) ->
       p2Val = val
-    p = Promise.parallel p1, p2
+    p = Promise.parallel [p1, p2]
     p.callback (val) ->
       val.should.be.true
       p1Val.should.equal 'hello'
@@ -129,7 +129,7 @@ module.exports =
   if at least one of its component Promises clears its values''': wrapTest (done) ->
     p1 = new Promise
     p2 = new Promise
-    p = Promise.parallel p1, p2
+    p = Promise.parallel [p1, p2]
     counter = 0
     p.callback (val) ->
       val.should.equal 'first'
