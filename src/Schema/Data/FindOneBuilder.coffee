@@ -1,7 +1,7 @@
 {merge} = require '../../util'
 DataQueryBuilder = require './QueryBuilder'
 
-FindOneBuilder = module.exports = (@conds) ->
+FindOneBuilder = module.exports = (@source, @conds) ->
   DataQueryBuilder.call @, 'findOne'
   return
 

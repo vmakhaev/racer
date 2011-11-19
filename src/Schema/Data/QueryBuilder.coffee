@@ -1,35 +1,35 @@
 Promise = require '../../Promise'
 
 DataQueryBuilder = module.exports = (@_queryMethod) ->
-  @_includeFields = {}
-  @_logicalFields = {}
-  @_fieldPromises = {}
+  @_includeFields           = {}
+  @_dataFieldsByLogicalPath = {}
+  @_fieldPromises           = {}
   return
 
 # TODO
 DataQueryBuilder.condsRelTo = (dataField, LogicalSkema, conds) ->
 
 DataQueryBuilder:: =
-  # @param {LogicalField} logicalField
-  # @param {Boolean} didNotFind indicates whether the success/failure of the previous DataQueryBuilder
-  notifyAboutPrevQuery: (logicalField, didNotFind) ->
-    logicalFields  = @_logicalFields
-    logicalPath    = logicalField.path
-    dataFields     = logicalFields[logicalPath]
+  notifyAboutPrevQuery: (logicalField, didFind) ->
+    dFieldsByLPath  = @_dataFieldsByLogicalPath
+    logicalPath     = logicalField.path
+    dataFields      = dFieldsByLPath[logicalPath]
     includeFields = @_includeFields
-    for dataField in dataFields
-      if didNotFind then delete includeFields[dataField.path]
-    delete logicalFields[logicalPath]
-    @fire() unless Object.keys(logicalFields).length
+    if didFind
+      # If we found the result in the previous query, then no need to find it again
+      delete includeFields[path] for {path} in dataFields
+      delete dFieldsByLPath[logicalPath]
+    @fire() unless Object.keys(dFieldsByLPath).length
     return
 
+  # TODO? inversion of control, so that
+  #       dataField.addToBuilder, so we can customize add on dataField's end
   add: (dataField, dataFieldProm) ->
-    @source ||= dataField.source
-    fieldPath = dataField.path
-    @_includeFields[fieldPath] = dataField
-    @_fieldPromises[fieldPath] = dataFieldProm
-    dataFields = @_logicalFields[dataField.logicalField.path] ||= []
-    dataFields.push dataField
+    {logicalField, path} = dataField
+    @_includeFields[path] = dataField
+    @_fieldPromises[path] = dataFieldProm
+    dataFields = @_dataFieldsByLogicalPath[logicalField.path] ||= []
+    return dataFields.push dataField
 
   toQuery: ->
     fields        = @_includeFields
@@ -42,8 +42,6 @@ DataQueryBuilder:: =
       DataSkema = @source.dataSchemasWithNs[ns]
       return DataSkema[queryMethod] @conds, select: fieldPaths
 
-    # TODO Consider the following code. Remove or complete?
-    throw new Error 'Unimplemented'
-    prom = new Promise
-    prom.fulfill null
-    return prom
+    console.warn 'The query has no fields to look up!'
+    console.trace()
+    return new Promise fulfill: undefined

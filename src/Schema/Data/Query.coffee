@@ -28,9 +28,11 @@ DataQuery:: = merge new AbstractQuery(),
 #      # TODO Filter this?
 #      dataFields = ([field, ''] for _, field of RootDataSkema.fields)
 
-    firePromise = (new Promise).bothback fireCallback
+    firePromise = new Promise bothback: fireCallback
 
-    @['_' + @queryMethod + 'Fire'](firePromise)
+    switch @queryMethod
+      when 'find'    then @_findFire    firePromise
+      when 'findOne' then @_findOneFire firePromise
 
     return firePromise
 

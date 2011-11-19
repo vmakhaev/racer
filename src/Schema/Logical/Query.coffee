@@ -1,7 +1,7 @@
 {merge} = require '../../util'
 AbstractQuery = require '../AbstractQuery'
 Promise = require '../../Promise'
-DSQueryDispatcher = require '../DSQueryDispatcher'
+QueryDispatcher = require '../QueryDispatcher'
 
 LogicalQuery = module.exports = (schema, criteria) ->
   AbstractQuery.call @, schema, criteria
@@ -12,8 +12,6 @@ LogicalQuery:: = merge new AbstractQuery(),
   # data sources; then, collects and re-assembles the data into the
   # logical document and passes it to callback(err, doc)
   fire: (fireCallback) ->
-    conds = @_castConditions() # Logical schema casting of the query condition vals
-    RootLogicalSkema = @schema
     # Conditions and fields to select will determine the async flow path
     # through (data source, namespace) nodes. Conditions may be for fields
     # spread between two data sources (e.g., name in one and age in another).
@@ -22,6 +20,7 @@ LogicalQuery:: = merge new AbstractQuery(),
     # query followed by a merge+filter of the results, clustering attributes
     # by doc id.
     # Fields may be spread between two data sources
+    RootLogicalSkema = @schema
     selects = @_selects
     if selects.length
       # In a select, fields could be deeply nested fields that belong to another Logical Schema
@@ -32,13 +31,14 @@ LogicalQuery:: = merge new AbstractQuery(),
       remainder = ''
       logicalFields = ([field, remainder] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
+    conds = @_castConditions() # Logical schema casting of the query condition vals
     queryMethod = @queryMethod
-    qDispatcher = new DSQueryDispatcher queryMethod
+    qDispatcher = new QueryDispatcher queryMethod
 
-    for [logicalField, ownerPathRelToRoot] in logicalFields
+    for [logicalField, schemaPath] in logicalFields
       qDispatcher.add logicalField, conds
 
-    firePromise = (new Promise).bothback fireCallback
+    firePromise = new Promise bothback: fireCallback
     qDispatcher.fire (err, lFieldVals...) ->
       return firePromise.error err if err
       # TODO Maybe create a version of Promise.parallel that returns an Object as val in (err, val)
@@ -46,10 +46,9 @@ LogicalQuery:: = merge new AbstractQuery(),
         when 'findOne'
           attrs = {}
           for [lFieldVal], i in lFieldVals
-            [logicalField, ownerPathRelToRoot] = logicalFields[i]
-            attrPath = ownerPathRelToRoot
-            attrPath += '.' if attrPath
-            attrPath += logicalField.path
+            continue if lFieldVal is undefined
+            [logicalField, schemaPath] = logicalFields[i]
+            attrPath = logicalField.expandPath schemaPath
             attrs[attrPath] = lFieldVal
           result = new RootLogicalSkema attrs, false
         when 'find'
@@ -57,17 +56,15 @@ LogicalQuery:: = merge new AbstractQuery(),
           arrOfAttrs = []
           for [arrOfLFieldVals], i in lFieldVals
             continue if arrOfLFieldVals is undefined
-            [logicalField, ownerPathRelToRoot] = logicalFields[i]
-            attrPath = ownerPathRelToRoot
-            attrPath += '.' if attrPath
-            attrPath += logicalField.path
+            [logicalField, schemaPath] = logicalFields[i]
+            attrPath = logicalField.expandPath schemaPath
             for {pkeyVal, val} in arrOfLFieldVals
               unless member = memberByPkey[pkeyVal]
                 member = memberByPkey[pkeyVal] = {}
                 arrOfAttrs.push member
               member[attrPath] = val
           result = (new RootLogicalSkema attrs, false for attrs in arrOfAttrs)
-            
+
       firePromise.fulfill result
 
     return firePromise

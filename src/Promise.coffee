@@ -62,7 +62,7 @@ Promise:: =
 
 Promise::callback = Promise::on
 
-Promise.parallel = (promises...) ->
+Promise.parallel = (promises) ->
   compositePromise = new Promise
   dependencies = promises.length
   parallelVals = []
