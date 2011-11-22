@@ -131,6 +131,8 @@ exports.Ref = baseType.extend 'Ref',
     return @pkeyType.cast val
 
   uncast: (val) ->
+    return val if val.constructor == Object
+    console.trace()
     return @pkeyType.uncast val
 
   createField: (opts) ->

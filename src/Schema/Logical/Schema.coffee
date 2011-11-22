@@ -4,20 +4,17 @@ Promise = require '../../Promise'
 FlowBuilder = require '../FlowBuilder'
 CommandSequence = require '../CommandSequence'
 operation = require './operation'
+Klass = require '../Klass'
+
+EventedKlass = Klass.extend 'EventedKlass',
+  merge(new EventEmitter,
+    init: -> EventEmitter.call @
+  )
 
 # This is how we define our logical schema (vs our data source schema).
-# At this layer, we take care of validation, most typecasting, virtual
-# attributes, and methods encapsulating business logic.
-LogicalSchema = module.exports = ->
-  EventEmitter.call @
-  return
+# At this layer, we take care of validation, most typecasting, and methods encapsulating business logic. At this layer, there is no distinction between virtual and non-virtual attributes.
 
-LogicalSchema._schemas    = {} # Maps schema namespaces -> LogicalSchema subclasses
-LogicalSchema._sources    = {} # Maps source names -> DataSource instances
-LogicalSchema._subclasses = []
-
-LogicalSchema.extend = (name, ns, config) ->
-  ParentClass = @
+LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # @constructor
   # @param {String -> Object} attrs maps path names to their values
   # @param {Boolean} isNew; will be false when populating this from the
@@ -25,14 +22,16 @@ LogicalSchema.extend = (name, ns, config) ->
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
   #     object, we keep an oplog, which we can leverage better at the Adapter
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
-  SubClass = (attrs, @isNew = true, oplog, assignerDoc) ->
+  init: (attrs, isNew = true, oplog, assignerDoc) ->
+    @isNew = isNew
     @oplog = oplog || LogicalSchema.oplog || []
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
     @_doc = {} # TODO Re-name @_doc and @fields for less confusion
 
-    ParentClass.apply @, Array::slice.call arguments
+    SubClass = @constructor
+    @_super.apply @, arguments
 
     if attrs then for attrName, attrVal of attrs
       # TODO attrs may contain nested objects
@@ -54,47 +53,116 @@ LogicalSchema.extend = (name, ns, config) ->
 #       dataSchemas = SubClass.dataSchemas
 #       for dataSchema in dataSchemas
 #         dataSchema.addDefaults @
-    return
 
-  SubClass:: = proto = new ParentClass()
-  proto.constructor = SubClass
+  toJSON: -> @_doc
 
-  SubClass.ns          = ns
-  SubClass._name       = name # SubClass.name is frozen to ""
-  SubClass._subclasses = []
-  SubClass._superclass = @
-  @_subclasses.push SubClass
+  _assignAttrs: (name, val, obj = @_doc) ->
+    {fields, _name} = LogicalSkema = @constructor
+    if field = fields[name]
+      oplog = if @isNew then @oplog else null
+      return obj[name] = field.cast val, oplog, @
+    
+    if val.constructor == Object
+      for k, v of val
+        nextObj = obj[name] ||= {}
+        @_assignAttrs k, v, nextObj
+      return obj[name]
 
-  # Copy over base static methods
-  for static in ['extend', 'static']
-    SubClass[static] = LogicalSchema[static]
+    throw new Error "Either `#{name}` isn't a field of `#{_name}`, or `#{val}` is not an Object"
 
-  # Copy over all dynamically generated static methods
-  SubClass._statics = {}
-  for staticName, fn of @_statics
-    SubClass.static staticName, fn
+  atomic: ->
+    return Object.create @,
+      _atomic: value: true
 
-  SubClass.fields = {}
-  SubClass.field = (fieldName, setToField) ->
+  set: (attr, val, callback) ->
+    oplogIndex = @oplog.length
+    val = @_assignAttrs attr, val
+    if _id = @_doc._id
+      conds = {_id}
+    else
+      conds = __cid__: @cid
+    if val instanceof LogicalSchema
+      if fkey = val.get('_id')
+        setTo = _id: fkey
+      else
+        setTo = cid: val.cid
+      op = [@, @constructor.ns, conds, 'set', attr, setTo]
+      @oplog.splice oplogIndex, 0, op
+      # Leaving off a val means assign this attr to the
+      # document represented in the next op
+    else
+      @oplog.push [@, @constructor.ns, conds, 'set', attr, val]
+    # Otherwise this operation is stored in val's oplog, since val is a LogicalSchema document
+    if @_atomic then @save callback
+    return @
+
+  # Get from in-memory local @_doc
+  # TODO Leverage defineProperty or Proxy.create server-side
+  get: (attr) -> return @_doc[attr]
+
+  del: (attr, callback) ->
+    if _id = @_doc._id then conds = {_id}
+    @oplog.push [@, @constructor.ns, conds, 'del', attr]
+    if @_atomic then @save callback
+    return @
+
+  # self-destruct
+  destroy: (callback) ->
+    if _id = @_doc._id then conds = {_id}
+    @oplog.push [@, @constructor.ns, conds, 'destroy']
+    LogicalSchema._applyOps oplog, callback
+
+  push: (attr, vals..., callback) ->
+    if typeof callback isnt 'function'
+      vals.push callback
+      callback = null
+
+    {fields, ns} = LogicalSkema = @constructor
+    # TODO DRY - This same code apperas in _assignAttrs
+    # TODO In fact, this may already be part of Field::cast
+    field = fields[attr]
+    vals = field.cast vals, if @isNew then @oplog else null
+    arr = @_doc[attr] ||= []
+    arr.push vals...
+
+    if _id = @_doc._id
+      conds = {_id}
+    else
+      conds = __cid__: @cid
+
+    if field.type.memberType.prototype instanceof LogicalSchema
+      setTo = []
+      for mem, i in vals
+        setTo[i] = cid: mem.cid
+      @oplog.splice @oplog.length-vals.length, 0, [@, @constructor.ns, conds, 'push', attr, setTo...]
+    else
+      @oplog.push [@, ns, conds, 'push', attr, vals...]
+    if @_atomic
+      @save callback
+    return @
+
+  # @param {Function} callback(err, document)
+  save: (callback) ->
+    oplog = @oplog.slice()
+    @oplog.reset()
+    LogicalSchema._applyOps oplog, (err) =>
+      return callback err if err
+      @isNew = false
+      callback null, @
+
+  validate: ->
+    errors = []
+    for fieldName, field of @constructor.fields
+      result = field.validate @_doc[fieldName]
+      continue if result is true
+      errors = errors.concat result
+    return if errors.length then errors else true
+, # STATIC METHODS
+  field: (fieldName, setToField) ->
     return field if field = @fields[fieldName]
     return @fields[fieldName] = setToField
-
-  # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
-  for fieldName, descriptor of config
-    field = LogicalSchema._createFieldFrom descriptor, fieldName
-    bootstrapField = (field, fieldName, SubClass) ->
-      field.sources = [] # TODO Are we using field.sources?
-      field.path    = fieldName
-      field.schema  = SubClass
-      SubClass.field fieldName, field
-    if field instanceof Promise
-      field.callback (schema) ->
-        field = schema.createField()
-        bootstrapField field, fieldName, SubClass
-    else
-      bootstrapField field, fieldName, SubClass
-
-  SubClass.cast = (val, oplog, assignerDoc) ->
+  
+  cast: (val, oplog, assignerDoc) ->
     if val.constructor == Object
       # TODO Should the 2nd args here always be true?
       return new @ val, true, oplog, assignerDoc if oplog
@@ -107,66 +175,6 @@ LogicalSchema.extend = (name, ns, config) ->
       return assignerDoc
     throw new Error val + ' is neither an Object nor a ' + @_name
 
-  LogicalSchema._schemaPromises[name]?.fulfill SubClass
-
-  return LogicalSchema._schemas[ns] = SubClass
-
-LogicalSchema.static = (name, fn) ->
-  if name.constructor == Object
-    for _name, fn of name
-      @static _name, fn
-    return @
-  
-  @_statics[name] = @[name] = fn
-  # Add to all subclasses
-  decorateDescendants = (descendants, name, fn) ->
-    for SubClass in descendants
-      continue if SubClass._statics[name]
-      SubClass[name] = fn
-      decorateDescendants SubClass._subclasses, name, fn
-  decorateDescendants @_subclasses, name, fn
-  return @
-LogicalSchema._statics = {}
-
-LogicalSchema.fromPath = (path) ->
-  pivot = path.indexOf '.'
-  ns    = path.substring 0, pivot
-  path  = path.substring pivot+1
-  pivot = path.indexOf '.'
-  id    = path.substring 0, pivot
-  path  = path.substring pivot+1
-  return { Skema: @_schemas[ns], id, path }
-
-# Send the oplog to the data sources, where they
-# convert the ops into db commands and exec them
-#
-# @param {Array} oplog
-# @param {Function} callback(err, doc)
-# @param {LogicalSchema} doc that originates the _applyOps call
-LogicalSchema._applyOps = (oplog, callback) ->
-  cmdSeq = @_oplogToCommandSequence oplog
-  return cmdSeq.fire (err, cid, extraAttrs) ->
-    return callback(err || null)
-
-# Keeping this as a separate function makes testing oplog to
-# command set possible.
-# TODO This should be able to handle more refined write flow control
-# TODO Handle nested paths
-LogicalSchema._oplogToCommandSequence = (oplog) ->
-  cmdSeq = new CommandSequence
-  for op in oplog
-    {doc, ns, conds, method, path, args} = operation.splat op
-    LogicalSkema = LogicalSchema._schemas[ns]
-    {dataFields} = logicalField = LogicalSkema.fields[path]
-    # TODO How to modify for STM? Need rollback mechanism
-    for dataField in dataFields
-      {source} = dataField
-      # In order to modify cmdSeq, we delegate to the data
-      # source, which delegates the appropriate data type
-      source[method] cmdSeq, doc, dataField, conds, args...
-  return cmdSeq
-
-LogicalSchema.static
   # TODO Do we even need dataSchemas as a static here?
   dataSchemas: []
   # We use this to define a "data source schema" and link it to
@@ -282,6 +290,74 @@ LogicalSchema.static
       obj[path] = field.cast val if field.cast
     return obj
 
+  mixin: (mixin) ->
+    {init, static, proto} = mixin
+    @static static if static
+    if proto for k, v of proto
+      @::[k] = v
+    @_inits.push init if init
+
+LogicalSchema._schemas = {} # Maps schema namespaces -> LogicalSchema subclasses
+LogicalSchema._sources = {} # Maps source names -> DataSource instances
+LogicalSchema.extend = (name, ns, fieldsConf) ->
+  SubSkema = Klass.extend.call @, name, fieldsConf, {ns, fields: {}}
+
+  # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
+  for fieldName, descriptor of fieldsConf
+    field = LogicalSchema._createFieldFrom descriptor, fieldName
+    bootstrapField = (field, fieldName, SubSkema) ->
+      field.sources = [] # TODO Are we using field.sources?
+      field.path    = fieldName
+      field.schema  = SubSkema
+      SubSkema.field fieldName, field
+    if field instanceof Promise
+      field.callback (schema) ->
+        field = schema.createField()
+        bootstrapField field, fieldName, SubSkema
+    else
+      bootstrapField field, fieldName, SubSkema
+
+  LogicalSchema._schemaPromises[name]?.fulfill SubSkema
+  return LogicalSchema._schemas[ns] = SubSkema
+
+LogicalSchema.fromPath = (path) ->
+  pivot = path.indexOf '.'
+  ns    = path.substring 0, pivot
+  path  = path.substring pivot+1
+  pivot = path.indexOf '.'
+  id    = path.substring 0, pivot
+  path  = path.substring pivot+1
+  return { Skema: @_schemas[ns], id, path }
+
+# Send the oplog to the data sources, where they
+# convert the ops into db commands and exec them
+#
+# @param {Array} oplog
+# @param {Function} callback(err, doc)
+# @param {LogicalSchema} doc that originates the _applyOps call
+LogicalSchema._applyOps = (oplog, callback) ->
+  cmdSeq = @_oplogToCommandSequence oplog
+  return cmdSeq.fire (err, cid, extraAttrs) ->
+    return callback(err || null)
+
+# Keeping this as a separate function makes testing oplog to
+# command set possible.
+# TODO This should be able to handle more refined write flow control
+# TODO Handle nested paths
+LogicalSchema._oplogToCommandSequence = (oplog) ->
+  cmdSeq = new CommandSequence
+  for op in oplog
+    {doc, ns, conds, method, path, args} = operation.splat op
+    LogicalSkema = LogicalSchema._schemas[ns]
+    {dataFields} = logicalField = LogicalSkema.fields[path]
+    # TODO How to modify for STM? Need rollback mechanism
+    for dataField in dataFields
+      {source} = dataField
+      # In order to modify cmdSeq, we delegate to the data
+      # source, which delegates the appropriate data type
+      source[method] cmdSeq, doc, dataField, conds, args...
+  return cmdSeq
+
 # Copy over where, find, findOne, etc from Query::,
 # so we can do e.g., LogicalSchema.find, LogicalSchema.findOne, etc
 LogicalQuery = require './Query'
@@ -291,122 +367,6 @@ for queryMethodName, queryFn of LogicalQuery::
     LogicalSchema.static queryMethodName, (args...)->
       query = new LogicalQuery @
       return queryFn.apply query, args
-
-LogicalSchema:: = new EventEmitter
-merge LogicalSchema::,
-  constructor: LogicalSchema
-
-  toJSON: -> @_doc
-
-  _assignAttrs: (name, val, obj = @_doc) ->
-    {fields, _name} = LogicalSkema = @constructor
-    if field = fields[name]
-      oplog = if @isNew then @oplog else null
-      return obj[name] = field.cast val, oplog, @
-    
-    if val.constructor == Object
-      for k, v of val
-        nextObj = obj[name] ||= {}
-        @_assignAttrs k, v, nextObj
-      return obj[name]
-
-    throw new Error "Either `#{name}` isn't a field of `#{_name}`, or `#{val}` is not an Object"
-
-  atomic: ->
-    return Object.create @,
-      _atomic: value: true
-
-  set: (attr, val, callback) ->
-    oplogIndex = @oplog.length
-    val = @_assignAttrs attr, val
-    if _id = @_doc._id
-      conds = {_id}
-    else
-      conds = __cid__: @cid
-    if val instanceof LogicalSchema
-      if fkey = val.get('_id')
-        setTo = _id: fkey
-      else
-        setTo = cid: val.cid
-      op = [@, @constructor.ns, conds, 'set', attr, setTo]
-      @oplog.splice oplogIndex, 0, op
-      # Leaving off a val means assign this attr to the
-      # document represented in the next op
-    else
-      @oplog.push [@, @constructor.ns, conds, 'set', attr, val]
-    # Otherwise this operation is stored in val's oplog, since val is a LogicalSchema document
-    if @_atomic then @save callback
-    return @
-
-  # Get from in-memory local @_doc
-  # TODO Leverage defineProperty or Proxy.create server-side
-  get: (attr) -> return @_doc[attr]
-
-  del: (attr, callback) ->
-    if _id = @_doc._id then conds = {_id}
-    @oplog.push [@, @constructor.ns, conds, 'del', attr]
-    if @_atomic then @save callback
-    return @
-
-  # self-destruct
-  destroy: (callback) ->
-    if _id = @_doc._id then conds = {_id}
-    @oplog.push [@, @constructor.ns, conds, 'destroy']
-    LogicalSchema._applyOps oplog, callback
-
-  push: (attr, vals..., callback) ->
-    if typeof callback isnt 'function'
-      vals.push callback
-      callback = null
-
-    {fields, ns} = LogicalSkema = @constructor
-    # TODO DRY - This same code apperas in _assignAttrs
-    # TODO In fact, this may already be part of Field::cast
-    field = fields[attr]
-    vals = field.cast vals, if @isNew then @oplog else null
-    arr = @_doc[attr] ||= []
-    arr.push vals...
-
-    if _id = @_doc._id
-      conds = {_id}
-    else
-      conds = __cid__: @cid
-
-    if field.type.memberType.prototype instanceof LogicalSchema
-      setTo = []
-      for mem, i in vals
-        setTo[i] = cid: mem.cid
-      @oplog.splice @oplog.length-vals.length, 0, [@, @constructor.ns, conds, 'push', attr, setTo...]
-    else
-      @oplog.push [@, ns, conds, 'push', attr, vals...]
-    if @_atomic
-      @save callback
-    return @
-
-  # @param {Function} callback(err, document)
-  save: (callback) ->
-    oplog = @oplog.slice()
-    @oplog.reset()
-    LogicalSchema._applyOps oplog, (err) =>
-      return callback err if err
-      @isNew = false
-      callback null, @
-
-  validate: ->
-    errors = []
-    for fieldName, field of @constructor.fields
-      result = field.validate @_doc[fieldName]
-      continue if result is true
-      errors = errors.concat result
-    return if errors.length then errors else true
-
-
-LogicalSchema.static 'mixin', (mixin) ->
-  {init, static, proto} = mixin
-  @static static if static
-  if proto for k, v of proto
-    @::[k] = v
-  @_inits.push init if init
 
 contextMixin = require './mixin.context'
 LogicalSchema.mixin contextMixin
