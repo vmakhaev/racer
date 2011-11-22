@@ -60,3 +60,10 @@ Klass.static = (name, val) ->
   decorateDescendants @subclasses, name, val
   return @
 Klass._statics = {}
+
+Klass.static 'mixin', (mixin) ->
+  {init, static, proto} = mixin
+  @static static if static
+  if proto for k, v of proto
+    @::[k] = v
+  @_inits.push init if init
