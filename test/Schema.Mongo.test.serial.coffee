@@ -599,7 +599,7 @@ module.exports =
     , oplog
 
   '''should be able to properly retrieve an ObjectId Ref as the
-  configured local schema relation: Schema''': (done) ->
+  configured local schema relation: Schema @singles''': (done) ->
     oplog = []
     Tweet.create
       status: 'why so serious?',

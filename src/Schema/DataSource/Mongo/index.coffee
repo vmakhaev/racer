@@ -88,7 +88,6 @@ MongoSource = module.exports = DataSource.extend
 #        when 'find'    then types.ManyInverse
         when 'find' then {
           typeParams:
-            matchesMultipleCmds: true
             translateSet: (cmd, cmdSeq, path, val, doc, dataField) ->
               dependencyCmd = cmdSeq.commandsByCid[doc.cid]
               cmds = (cmdSeq.commandsByCid[cid] for {cid} in val)
@@ -103,9 +102,7 @@ MongoSource = module.exports = DataSource.extend
                     else
                       throw new Error "Command method #{cmd.method} isn't supported in this context"
             uncast: (arr) ->
-              for json, i in arr
-                arr[i] = DataSkema.uncast json
-              return arr
+              return (DataSkema.uncast json for json in arr)
           fieldParams:
             ns: DataSkema.ns
             fkey: fkey
