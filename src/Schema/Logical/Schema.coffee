@@ -290,13 +290,6 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
       obj[path] = field.cast val if field.cast
     return obj
 
-  mixin: (mixin) ->
-    {init, static, proto} = mixin
-    @static static if static
-    if proto for k, v of proto
-      @::[k] = v
-    @_inits.push init if init
-
 LogicalSchema._schemas = {} # Maps schema namespaces -> LogicalSchema subclasses
 LogicalSchema._sources = {} # Maps source names -> DataSource instances
 LogicalSchema.extend = (name, ns, fieldsConf) ->
