@@ -5,8 +5,9 @@ fnTest = if /xyz/.test(-> xyz) then /\b_super\b/ else /.*/
 
 Klass.extend = (name, instanceConf, staticConf) ->
   ParentKlass = @
-  SubKlass = (args...) ->
-    @init args...
+  SubKlass = ->
+    if !initializing && @init
+      @init.apply @, arguments
     return
   _super = @prototype
   initializing = true
