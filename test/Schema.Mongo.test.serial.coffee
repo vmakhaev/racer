@@ -1,7 +1,7 @@
 should = require 'should'
-Mongo = require 'Schema/DataSource/Mongo'
+Mongo = require '../src/Schema/DataSource/Mongo'
 mongo = null
-Schema = require 'Schema/Logical/Schema'
+Schema = require '../src/Schema/Logical/Schema'
 Blog = null
 Dog = null
 User = null
@@ -12,7 +12,7 @@ ObjectId = null
 module.exports =
   setup: (done) ->
     mongo = new Mongo
-    {ObjectId} = require 'Schema/DataSource/Mongo/types'
+    {ObjectId} = require '../src/Schema/DataSource/Mongo/types'
 
     # Reset these static variables, to keep tests independent
     Schema._sources = []
