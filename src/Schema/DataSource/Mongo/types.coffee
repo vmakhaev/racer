@@ -2,7 +2,8 @@ Schema = require '../../Logical/Schema'
 {merge} = require '../../../util'
 DataField = require '../../Data/Field'
 Promise = require '../../../Promise'
-{baseType} = require('../../Data/Schema')::types
+DataSchema = require '../../Data/Schema'
+{baseType} = DataSchema::types
 
 NativeObjectId = require('mongodb').BSONPure.ObjectID
 exports.ObjectId = baseType.extend 'ObjectId',
