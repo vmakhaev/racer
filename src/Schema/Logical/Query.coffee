@@ -13,7 +13,8 @@ LogicalQuery:: = merge new AbstractQuery(),
   # logical document and passes it to callback(err, doc)
   fire: (fireCallback) ->
     # Conditions and fields to select will determine the async flow path
-    # through (data source, namespace) nodes. Conditions may be for fields
+    # through (data source, namespace) nodes.
+    # TODO Conditions may be for fields
     # spread between two data sources (e.g., name in one and age in another).
     # In this case, findOne and find should use different implementations
     # where findOne is more serial vs find which uses a parallel fanout
