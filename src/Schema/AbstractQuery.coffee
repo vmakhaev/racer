@@ -17,7 +17,7 @@ AbstractQuery:: =
 
   where: (attr, val) ->
     @_conditions[attr] = val
-    @
+    return @
 
   find: (criteria, opts, callback) ->
     @queryMethod = 'find'
