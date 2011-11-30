@@ -49,6 +49,6 @@ Command:: =
           dataField = dataSchema.fields[attrName]
           if dataField.type?.uncast
             attrVal = dataField.type.uncast attrVal
-          doc._doc[attrName] = attrVal
+          doc._json[attrName] = attrVal
 
       callback err, doc.cid, extraAttrs
