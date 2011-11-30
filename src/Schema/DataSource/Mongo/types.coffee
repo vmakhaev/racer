@@ -132,6 +132,7 @@ exports.Ref = baseType.extend 'Ref',
     return @pkeyType.cast val
 
   uncast: (val) ->
+    # TODO Fix abstractions. uncast here works differently depending on the incoming val type
     return val if val.constructor == Object
     console.trace()
     return @pkeyType.uncast val
