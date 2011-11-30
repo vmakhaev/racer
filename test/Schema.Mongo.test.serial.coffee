@@ -45,7 +45,7 @@ module.exports =
       pet: Dog
       pets: [Dog]
       blogs: [Blog]
-      tweets: ['Tweet']
+      tweets: ['Tweet'] # many('Tweet', inverse: 'author')
     # blog: Blog
     #  friends: [schema('User')]
     #  group: schema('Group')
@@ -82,7 +82,7 @@ module.exports =
     Tweet = Schema.extend 'Tweet', 'tweets',
       _id: String
       status: String
-      author: User
+      author: User # one(User, inverse: 'tweets')
 
     Tweet.createDataSchema mongo, 'tweets',
       _id: mongo.pkey ObjectId
