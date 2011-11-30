@@ -334,7 +334,7 @@ LogicalSchema._applyOps = (oplog, callback) ->
     return callback(err || null)
 
 # Keeping this as a separate function makes testing oplog to
-# command set possible.
+# command sequence possible.
 # TODO This should be able to handle more refined write flow control
 # TODO Handle nested paths
 LogicalSchema._oplogToCommandSequence = (oplog) ->
