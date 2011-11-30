@@ -7,9 +7,8 @@ operation = require './operation'
 Klass = require '../Klass'
 
 EventedKlass = Klass.extend 'EventedKlass',
-  merge(new EventEmitter,
+  merge new EventEmitter(),
     init: -> EventEmitter.call @
-  )
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer, we take care of validation, most typecasting, and methods encapsulating business logic. At this layer, there is no distinction between virtual and non-virtual attributes.
@@ -28,7 +27,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
-    @_doc = {} # TODO Re-name @_doc and @fields for less confusion
+    @_json = {} # TODO Re-name @fields for less confusion
 
     SubClass = @constructor
     @_super.apply @, arguments
@@ -54,9 +53,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
 #       for dataSchema in dataSchemas
 #         dataSchema.addDefaults @
 
-  toJSON: -> @_doc
+  toJSON: -> @_json
 
-  _assignAttrs: (name, val, obj = @_doc) ->
+  _assignAttrs: (name, val, obj = @_json) ->
     {fields, _name} = LogicalSkema = @constructor
     if field = fields[name]
       oplog = if @isNew then @oplog else null
@@ -77,7 +76,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   set: (attr, val, callback) ->
     oplogIndex = @oplog.length
     val = @_assignAttrs attr, val
-    if _id = @_doc._id
+    if _id = @_json._id
       conds = {_id}
     else
       conds = __cid__: @cid
@@ -96,19 +95,19 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     if @_atomic then @save callback
     return @
 
-  # Get from in-memory local @_doc
+  # Get from in-memory local @_json
   # TODO Leverage defineProperty or Proxy.create server-side
-  get: (attr) -> return @_doc[attr]
+  get: (attr) -> return @_json[attr]
 
   del: (attr, callback) ->
-    if _id = @_doc._id then conds = {_id}
+    if _id = @_json._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'del', attr]
     if @_atomic then @save callback
     return @
 
   # self-destruct
   destroy: (callback) ->
-    if _id = @_doc._id then conds = {_id}
+    if _id = @_json._id then conds = {_id}
     @oplog.push [@, @constructor.ns, conds, 'destroy']
     LogicalSchema._applyOps oplog, callback
 
@@ -122,10 +121,10 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     # TODO In fact, this may already be part of Field::cast
     field = fields[attr]
     vals = field.cast vals, if @isNew then @oplog else null
-    arr = @_doc[attr] ||= []
+    arr = @_json[attr] ||= []
     arr.push vals...
 
-    if _id = @_doc._id
+    if _id = @_json._id
       conds = {_id}
     else
       conds = __cid__: @cid
@@ -153,7 +152,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   validate: ->
     errors = []
     for fieldName, field of @constructor.fields
-      result = field.validate @_doc[fieldName]
+      result = field.validate @_json[fieldName]
       continue if result is true
       errors = errors.concat result
     return if errors.length then errors else true

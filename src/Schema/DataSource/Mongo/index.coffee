@@ -264,7 +264,7 @@ MongoSource = module.exports = DataSource.extend
 
     if dataType.memberType._name == 'Object' && values[0] instanceof Schema
       memberField = dataType.memberType.createField()
-      @push cmdSeq, doc, ns, dataType.memberType, conds, path, (val._doc for val in values)
+      @push cmdSeq, doc, ns, dataType.memberType, conds, path, (val.toJSON() for val in values)
       return cmdSeq
 
     unless matchingCmd
