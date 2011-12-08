@@ -156,6 +156,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
       continue if result is true
       errors = errors.concat result
     return if errors.length then errors else true
+  
 , # STATIC METHODS
   field: (fieldName, setToField) ->
     return field if field = @fields[fieldName]
@@ -268,6 +269,14 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
       @readFlow = flowBuilder.flow
     return @
 
+  defFlow: (fieldName, callbacksByIntent) ->
+    field = @fields[fieldName]
+    field.flow = {}
+    for intent, callback of callbacksByIntent
+      flow = new Flow
+      callback flow
+      field.flow[intent] = flow
+
   lookupField: (path) ->
     return [field, ''] if field = @fields[path]
     parts = path.split '.'
@@ -326,31 +335,12 @@ LogicalSchema.fromPath = (path) ->
 #
 # @param {Array} oplog
 # @param {Function} callback(err, doc)
-# @param {LogicalSchema} doc that originates the _applyOps call
 LogicalSchema._applyOps = (oplog, callback) ->
-  cmdSeq = @_oplogToCommandSequence oplog
+  cmdSeq = CommandSequence.fromOplog oplog, @_schemas
   return cmdSeq.fire (err, cid, extraAttrs) ->
     return callback(err || null)
 
-# Keeping this as a separate function makes testing oplog to
-# command sequence possible.
-# TODO This should be able to handle more refined write flow control
-# TODO Handle nested paths
-LogicalSchema._oplogToCommandSequence = (oplog) ->
-  cmdSeq = new CommandSequence
-  for op in oplog
-    {doc, ns, conds, method, path, args} = operation.splat op
-    LogicalSkema = LogicalSchema._schemas[ns]
-    {dataFields} = logicalField = LogicalSkema.fields[path]
-    # TODO How to modify for STM? Need rollback mechanism
-    for dataField in dataFields
-      {source} = dataField
-      # In order to modify cmdSeq, we delegate to the data
-      # source, which delegates the appropriate data type
-      source[method] cmdSeq, doc, dataField, conds, args...
-  return cmdSeq
-
-# Copy over where, find, findOne, etc from Query::,
+# Copy over `where`, `find`, `findOne`, etc from Query::,
 # so we can do e.g., LogicalSchema.find, LogicalSchema.findOne, etc
 LogicalQuery = require './Query'
 for queryMethodName, queryFn of LogicalQuery::

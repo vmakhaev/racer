@@ -1,6 +1,7 @@
 Promise = require '../../Promise'
 DataField = require './Field'
 {merge} = require '../../util'
+{assignToUnflattened} = require '../../util/path'
 
 # @constructor DataSchema
 # @param {DataSource} source is the data source with which to associate this DataSchema
@@ -116,17 +117,16 @@ DataSchema:: =
     fieldParams = merge {path, ns, logicalField, source}, fieldParams
     return virtualType.createField fieldParams
 
-  # This will occur...
-  maybeDeferTranslateSet: (cmdSet, doc, dataField, conds, path, val) ->
+  maybeDeferTranslateSet: (cmdSeq, doc, dataField, conds, path, val) ->
     return false unless cid = val.cid
     # Handle embedded docs
-    pending = cmdSet.pendingByCid[cid] ||= []
+    pending = cmdSeq.pendingByCid[cid] ||= []
     op = ['set'].concat Array::slice.call(arguments, 1)
     pending.push op
     return true
 
   # TODO DRY - repeated in Mongo/types in baseType
-  translateSet: (cmd, cmdSet, path, val) ->
+  translateSet: (cmd, cmdSeq, path, val) ->
     val = @cast val if @cast
     switch cmd.method
       when 'update'
@@ -136,7 +136,7 @@ DataSchema:: =
         if -1 == path.indexOf '.'
           cmd.val[path] = val
         else
-          @_assignToUnflattened cmd.val, path, val
+          assignToUnflattened cmd.val, path, val
       else
         throw new Error 'Implement for other incoming method ' + cmd.method
     return true
@@ -182,7 +182,7 @@ DataSchema::types =
       merge extType, conf
       return extType
 
-    translateSet: (cmd, cmdSet, path, val) ->
+    translateSet: (cmd, cmdSeq, path, val) ->
       val = @cast val if @cast
       switch cmd.method
         when 'update'
@@ -192,23 +192,7 @@ DataSchema::types =
           if -1 == path.indexOf '.'
             cmd.val[path] = val
           else
-            @_assignToUnflattened cmd.val, path, val
+            assignToUnflattened cmd.val, path, val
         else
           throw new Error 'Implement for other incoming method ' + cmd.method
       return true
-
-    # Takes flattenedPath and traverses the object, assignTo, to the corresponding
-    # node. Then, assigns val to this node.
-    # @param {Object} assignTo
-    # @param {String} flattenedPath
-    # @param {Object} val
-    _assignToUnflattened: (assignTo, flattenedPath, val) ->
-      curr      = assignTo
-      parts     = flattenedPath.split '.'
-      lastIndex = parts.length - 1
-      for part, i in parts
-        if i == lastIndex
-          curr[part] = val
-        else
-          curr = curr[part] ||= {}
-      return curr

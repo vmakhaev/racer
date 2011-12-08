@@ -124,3 +124,22 @@ CommandSequence:: =
   fire: (callback) ->
     rootProm = @_setupPromises callback
     rootProm.fulfill()
+
+# TODO Replace this with CommandSequence.fromOplog(oplog, schemasByNs)
+# Keeping this as a separate function makes testing oplog to
+# command sequence possible.
+# TODO This should be able to handle more refined write flow control
+# TODO Handle nested paths
+CommandSequence.fromOplog = (oplog, schemasByNs) ->
+  cmdSeq = new CommandSequence
+  for op in oplog
+    {doc, ns, conds, method, path, args} = operation.splat op
+    LogicalSkema = schemasByNs[ns]
+    {dataFields} = logicalField = LogicalSkema.fields[path]
+    # TODO How to modify for STM? Need rollback mechanism
+    for dataField in dataFields
+      {source} = dataField
+      # In order to modify cmdSeq, we delegate to the data
+      # source, which delegates the appropriate data type
+      source[method] cmdSeq, doc, dataField, conds, args...
+  return cmdSeq

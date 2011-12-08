@@ -33,6 +33,11 @@ QueryDispatcher:: =
       for dField in dataFields
         dFieldProm = new Promise(bothback: dFieldPromCb)
         dFieldPromises.push dFieldProm
+
+        qb = @_findOrCreateQueryBuilder phase, dField, conds, queryMethod
+        if qb.add
+          qb.add dField, dFieldProm
+
         switch dField.type._name
           when 'Virtual'
             query = dField.querify conds
@@ -94,13 +99,18 @@ QueryDispatcher:: =
         meta.val = dataType.uncast meta.val
     return logicalFieldPromise.fulfill values
 
-  # @param {Number} phase
-  # @param {DataSource} source
-  # @param {String} ns
-  # @param {Object} conds
-  # @param {String} queryMethod
-  _findOrCreateQueryBuilder: (phase, source, ns, conds, queryMethod) ->
+  # TODO Eliminate branching in code to either _findOrCreateQueryBuilder or _addQueryAsQueryBuilder. Better way to do this polymorphically?
+
+
+  _findOrCreateQueryBuilder: (phase, dField, conds, queryMethod) ->
     buildersByHash = @_buildersByPhase[phase] ||= {}
+    if query = dField.querify?(conds)
+      # Is the case for Virtual DataFields
+      {source, ns} = query.schema
+      conds = query._conditions
+      queryMethod = query.queryMethod
+    else
+      {source, ns} = dField
     hash = @_hash source, ns
     builders = buildersByHash[hash] ||= []
     for qb in builders
@@ -111,17 +121,34 @@ QueryDispatcher:: =
     builders.push qb
     return qb
 
-  _addQueryAsQueryBuilder: (phase, query) ->
-    buildersByHash = @_buildersByPhase[phase] ||= {}
-    {source, ns} = query.schema
-    hash = @_hash source, ns
-    builders = buildersByHash[hash] ||= []
-    qb =
-      conds: query._conditions
-      toQuery: -> query
-      # TODO Define qb.notifyAboutPrevQuery
-    builders.push qb
-    return qb
+#  # @param {Number} phase
+#  # @param {DataSource} source
+#  # @param {String} ns
+#  # @param {Object} conds
+#  # @param {String} queryMethod
+#  _findOrCreateQueryBuilder: (phase, source, ns, conds, queryMethod) ->
+#    buildersByHash = @_buildersByPhase[phase] ||= {}
+#    hash = @_hash source, ns
+#    builders = buildersByHash[hash] ||= []
+#    for qb in builders
+#      return qb if deepEqual qb.conds, conds
+#    qb = switch queryMethod
+#      when 'find'    then new FindBuilder source, conds
+#      when 'findOne' then new FindOneBuilder source, conds
+#    builders.push qb
+#    return qb
+#
+#  _addQueryAsQueryBuilder: (phase, query) ->
+#    buildersByHash = @_buildersByPhase[phase] ||= {}
+#    {source, ns} = query.schema
+#    hash = @_hash source, ns
+#    builders = buildersByHash[hash] ||= []
+#    qb =
+#      conds: query._conditions
+#      toQuery: -> query
+#      # TODO Define qb.notifyAboutPrevQuery
+#    builders.push qb
+#    return qb
   
   _hash: (source, ns) -> source._name + '.' + ns
 
