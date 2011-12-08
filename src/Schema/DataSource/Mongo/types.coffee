@@ -1,5 +1,6 @@
 Schema = require '../../Logical/Schema'
 {merge} = require '../../../util'
+{assignToUnflattened} = require '../../../util/path'
 DataField = require '../../Data/Field'
 Promise = require '../../../Promise'
 DataSchema = require '../../Data/Schema'
@@ -124,7 +125,7 @@ exports.Array = baseType.extend 'Array',
           if -1 == path.indexOf '.'
             cmd.val[path] = pkeyVals
           else
-            @_assignToUnflattened cmd.val, path, pkeyVals
+            assignToUnflattened cmd.val, path, pkeyVals
     return true
 
 exports.Ref = baseType.extend 'Ref',

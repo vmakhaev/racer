@@ -131,22 +131,6 @@ MongoSource = module.exports = DataSource.extend
           return query.fire()
       return type
 
-  # Takes flattenedPath and traverses the object, assignTo, to the corresponding
-  # node. Then, assigns val to this node.
-  # @param {Object} assignTo
-  # @param {String} flattenedPath
-  # @param {Object} val
-  _assignToUnflattened: (assignTo, flattenedPath, val) ->
-    curr      = assignTo
-    parts     = flattenedPath.split '.'
-    lastIndex = parts.length - 1
-    for part, i in parts
-      if i == lastIndex
-        curr[part] = val
-      else
-        curr = curr[part] ||= {}
-    return curr
-
   # TODO Better lang via MongoCommandBuilder.handle 'set', (...) -> ?
   # @param {CommandSequence} the current command sequence we're building
   # @param {Schema}     doc that generated the incoming op params
