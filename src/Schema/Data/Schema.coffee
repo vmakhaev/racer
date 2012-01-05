@@ -64,6 +64,7 @@ DataSchema:: =
         val[path] = type.cast v
     return val
 
+  # TODO Does it make sense to have defaults outside of the Logical Schema?
   # Adds defaults specified in the data source schema
   # to the Logical Source schema document.
   #
