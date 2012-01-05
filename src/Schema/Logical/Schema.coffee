@@ -47,12 +47,6 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
         @set attrName, attrVal
       else
         @_assignAttrs attrName, attrVal
-    # TODO Add the following block back
-#     if @isNew
-#       # TODO Move source defaults out of constructor?
-#       dataSchemas = SubClass.dataSchemas
-#       for dataSchema in dataSchemas
-#         dataSchema.addDefaults @
 
   toJSON: -> @_json
 

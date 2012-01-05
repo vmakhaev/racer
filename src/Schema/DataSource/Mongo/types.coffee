@@ -15,8 +15,6 @@ exports.ObjectId = baseType.extend 'ObjectId',
   uncast: (oid) ->
     return oid.toHexString()
 
-  defaultTo: -> new NativeObjectId
-
   fromString: (str) ->
     unless typeof str is 'string' && 24 == str.length
       throw new Error 'Invalid ObjectId'
