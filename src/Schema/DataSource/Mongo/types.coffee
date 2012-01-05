@@ -69,7 +69,7 @@ exports.Array = baseType.extend 'Array',
               --remaining || derefProm.fulfill arr
         return derefProm
     return field
-  
+
   translateSet: (cmd, cmdSet, path, val) ->
     {pkeyName} = @memberType
 
@@ -96,7 +96,7 @@ exports.Array = baseType.extend 'Array',
         when 'update' then cmd.val.$set[path] = pkeyVals
         else
           throw new Error "Command method #{cmd.method} isn't supported in this context"
-    
+
     if cmd.pos
       positionMethod = null
     else
@@ -112,7 +112,7 @@ exports.Array = baseType.extend 'Array',
       else if pkeyVal = @memberType.cast mem.get pkeyName
         # TODO Next line does un-necessary work when there are no dependencies to create
         existingPkeyIndices.push [pkeyVal, i]
-    
+
     if positionMethod
       cmdSet[positionMethod] positionArgs...
     else
