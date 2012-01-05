@@ -6,6 +6,7 @@ SERIAL_TESTS_SLOW = $(shell find test/ -name '*.test.serial.slow.coffee')
 test-single:
 	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
 		$(TESTFLAGS) \
+		--serial \
 		--timeout 6000 \
 		--tags single \
 		$(ASYNC_TESTS_FAST)
@@ -45,6 +46,14 @@ test-serial-slow:
 		--timeout 6000 \
 		$(TESTFLAGS) \
 		$(SERIAL_TESTS_SLOW)
+
+test-persistence:
+	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
+		--serial \
+		--timeout 6000 \
+		$(TESTFLAGS) \
+		./test/Schema.test.serial.coffee \
+		./test/Schema.Mongo.test.serial.coffee
 
 test-async: test-async-fast
 test-serial: test-serial-fast test-serial-slow
