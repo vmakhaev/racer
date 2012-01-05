@@ -11,7 +11,9 @@ EventedKlass = Klass.extend 'EventedKlass',
     init: -> EventEmitter.call @
 
 # This is how we define our logical schema (vs our data source schema).
-# At this layer, we take care of validation, most typecasting, and methods encapsulating business logic. At this layer, there is no distinction between virtual and non-virtual attributes.
+# At this layer of abstraction:
+# - We take care of validation, most typecasting, and methods encapsulating business logic.
+# - There is no distinction between virtual and non-virtual attributes.
 
 LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # @constructor
@@ -21,13 +23,12 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
   #     object, we keep an oplog, which we can leverage better at the Adapter
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
-  init: (attrs, isNew = true, oplog, assignerDoc) ->
-    @isNew = isNew
+  init: (attrs, @isNew = true, oplog, assignerDoc) ->
     @oplog = oplog || LogicalSchema.oplog || []
     @oplog.reset ||= -> @length = 0
     @oplog.nextCid ||= 1
     @cid = @oplog.nextCid++ if @isNew
-    @_json = {} # TODO Re-name @fields for less confusion
+    @_json = {}
 
     SubClass = @constructor
     @_super.apply @, arguments
@@ -37,9 +38,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
       # TODO Lazy casting later?
       field = SubClass.fields[attrName]
 
-      # 1st conditional term: Cast defined fields; ad hoc fields skip this
-      # 2nd conditional term: Don't cast undefineds
-      if field && attrVal
+      # 1st conditional term (field): Cast defined fields; ad hoc fields skip this
+      # 2nd conditional term (attrVal): Don't cast undefineds
+      if field && (attrVal isnt undefined)
         oplog = if @isNew then @oplog else null
         attrVal = field.cast(attrVal, oplog, assignerDoc || @)
       if @isNew
@@ -60,7 +61,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     if field = fields[name]
       oplog = if @isNew then @oplog else null
       return obj[name] = field.cast val, oplog, @
-    
+
     if val.constructor == Object
       for k, v of val
         nextObj = obj[name] ||= {}
@@ -96,7 +97,6 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     return @
 
   # Get from in-memory local @_json
-  # TODO Leverage defineProperty or Proxy.create server-side
   get: (attr) -> return @_json[attr]
 
   del: (attr, callback) ->
