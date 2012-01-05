@@ -1,5 +1,5 @@
 should = require 'should'
-Schema = require 'Schema'
+Schema = require '../src/Schema/Logical/Schema'
 
 module.exports =
   '''Schema.extend should return a contructor that inherits
@@ -101,9 +101,9 @@ module.exports =
     User = Schema.extend 'User', 'users',
       name: String
 
-    {schema, path} = Schema.fromPath 'users.1.name'
-    schema.should.equal User
-    path.should.equal '1.name'
+    {Skema, path} = Schema.fromPath 'users.1.name'
+    Skema.should.equal User
+    path.should.equal 'name'
     done()
 
   '''an instantiated Schema doc initialized with attributes
