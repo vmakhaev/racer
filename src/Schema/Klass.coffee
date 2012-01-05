@@ -3,6 +3,12 @@ Klass = module.exports = -> return
 initializing = false
 fnTest = if /xyz/.test(-> xyz) then /\b_super\b/ else /.*/
 
+# Example:
+# Klass.extend 'CustomKlass',
+#   instanceMethodA: ->
+#   instancePropertyA: ''
+# , staticMethodA: ->
+#   staticPropertyA: ''
 Klass.extend = (name, instanceConf, staticConf) ->
   ParentKlass = @
   SubKlass = ->
