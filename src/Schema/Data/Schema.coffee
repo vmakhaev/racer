@@ -64,22 +64,6 @@ DataSchema:: =
         val[path] = type.cast v
     return val
 
-  # TODO Does it make sense to have defaults outside of the Logical Schema?
-  # Adds defaults specified in the data source schema
-  # to the Logical Source schema document.
-  #
-  # @param {Schema} document
-  addDefaults: (document) ->
-    fields = @fields
-    for fieldName, {defaultTo} of fields
-      # TODO Replace _id w/generic pkey
-      continue if fieldName == '_id' || defaultTo is undefined
-      val = document.get fieldName
-      if val is undefined
-        defaultTo = defaultTo val if typeof defaultTo is 'function'
-        # TODO Ensure fieldName is part of logical schema AND data source schema; not part of data source schema but not logical schema
-        document.set fieldName, defaultTo
-
   # When acting like a type
   createField: (opts) -> new DataField @, opts
   uncast: (val) ->
