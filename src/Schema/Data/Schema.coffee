@@ -155,6 +155,9 @@ bufferify = (Klass) ->
 
 DataSchema.Buffer = bufferify DataSchema
 
+DataSchema.ABSTRACT = 'TODO'
+DataSchema.EXCLUDE = 'TODO'
+
 DataSchema::types =
   baseType:
     createField: (opts) -> new DataField @, opts
