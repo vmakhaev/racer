@@ -55,6 +55,13 @@ test-persistence:
 		./test/Schema.test.serial.coffee \
 		./test/Schema.Mongo.test.serial.coffee
 
+test-mongo:
+	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
+		--serial \
+		--timeout 6000 \
+		$(TESTFLAGS) \
+		./test/Schema.Mongo.test.serial.coffee
+
 test-async: test-async-fast
 test-serial: test-serial-fast test-serial-slow
 test-fast: test-async-fast test-serial-fast
