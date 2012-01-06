@@ -34,6 +34,7 @@ Type = module.exports = (name, config) ->
   return
 
 Type:: =
+  constructor: Type
   createField: -> new Field @
   assignAsTypeToSchemaField: (schema, fieldName) ->
     setups = @_setups

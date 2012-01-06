@@ -64,7 +64,7 @@ DataSchema:: =
         val[path] = type.cast v
     return val
 
-  # When acting like a type
+  # Be able to act like a type
   createField: (opts) -> new DataField @, opts
   uncast: (val) ->
     fields = @fields
@@ -73,13 +73,6 @@ DataSchema:: =
       if field.type.uncast
         val[path] = field.type.uncast v
     return val
-
-  castObj: (obj) ->
-    fields = @fields
-    for path, val of obj
-      field = fields[path]
-      obj[path] = field.cast val if field.cast
-    return obj
 
   # TODO addDataField ?
 
@@ -125,6 +118,11 @@ DataSchema:: =
       else
         throw new Error 'Implement for other incoming method ' + cmd.method
     return true
+
+
+AbstractSchema = require '../AbstractSchema'
+for _k, _v of AbstractSchema::
+  DataSchema::[_k] = _v
 
 DataQuery = require './Query'
 for queryMethodName, queryFn of DataQuery::

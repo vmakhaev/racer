@@ -101,8 +101,9 @@ module.exports =
     User = Schema.extend 'User', 'users',
       name: String
 
-    {Skema, path} = Schema.fromPath 'users.1.name'
+    {Skema, path, id} = Schema.fromPath 'users.1.name'
     Skema.should.equal User
+    id.should.equal '1'
     path.should.equal 'name'
     done()
 
@@ -258,6 +259,7 @@ module.exports =
   # Querying
   'Schema.findById should callback with the appropriate object': (done) ->
     User = Schema.extend 'User', 'users',
+      id: Number
       name: String
 
     # User.source Mongo
