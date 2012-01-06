@@ -48,19 +48,15 @@ test-serial-slow:
 		$(SERIAL_TESTS_SLOW)
 
 test-persistence:
-	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
-		--serial \
-		--timeout 6000 \
-		$(TESTFLAGS) \
-		./test/Schema.test.serial.coffee \
-		./test/Schema.Mongo.test.serial.coffee
+	@NODE_ENV=test mocha \
+		--reporter spec
+		./test/Schema.mocha.coffee \
+		./test/Schema.Mongo.mocha.coffee
 
 test-mongo:
-	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
-		--serial \
-		--timeout 6000 \
-		$(TESTFLAGS) \
-		./test/Schema.Mongo.test.serial.coffee
+	@NODE_ENV=test mocha \
+		--reporter spec
+		./test/Schema.Mongo.mocha.coffee
 
 test-async: test-async-fast
 test-serial: test-serial-fast test-serial-slow
