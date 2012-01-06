@@ -24,6 +24,9 @@ exports.ObjectId = baseType.extend 'ObjectId',
     return NativeObjectId.toString() unless arguments.length
     return oid.toHexString()
 
+  # For use in tests
+  generate: -> (new NativeObjectId)
+
 exports.Array = baseType.extend 'Array',
   cast: (list) ->
     # Returns an array comprehension

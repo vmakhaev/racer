@@ -2,6 +2,7 @@ should = require 'should'
 Mongo = require '../src/Schema/DataSource/Mongo'
 Schema = require '../src/Schema/Logical/Schema'
 {ObjectId} = require '../src/Schema/DataSource/Mongo/types'
+CommandSequence = require '../src/Schema/CommandSequence'
 
 describe 'Schema document', ->
   mongo = new Mongo
@@ -845,117 +846,125 @@ describe 'Schema document', ->
   describe 'command building', ->
     it 'should create a new update $set command for a single set', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.set 'name', 'Brian'
-      commandSet = Schema._oplogToCommandSequence u.oplog
+      commandSet = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = commandSet.singleCommand
       {method, args} = cmd.compile()
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $set: { name: 'Brian' } }
         { upsert: true, safe: true }
       ]
 
     it 'should add a 2nd set to an existing update $set command after a 1st set generates that command', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.set 'name', 'Brian'
       u.set 'age', 26
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $set: { name: 'Brian', age: 26 } }
         { upsert: true, safe: true }
       ]
 
     it 'should create a new $unset command for a single del', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.del 'name'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $unset: { name: 1 } }
         { upsert: true, safe: true }
       ]
 
     it "a 2nd sequential del on the same schema doc but different field should add the field to the existing update $unset command involving the first del's field", ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.del 'name'
       u.del 'age'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $unset: { name: 1, age: 1 } }
         { upsert: true, safe: true }
       ]
 
     it 'should create a new update $push command for a single push', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { tags: 'nodejs'} }
         { upsert: true, safe: true }
       ]
 
     it 'pushing multiple items with a single push should result in a $pushAll command', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs', 'sf'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $pushAll: { tags: ['nodejs', 'sf']} }
         { upsert: true, safe: true }
       ]
 
     it '2 pushes should result in a $pushAll', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs'
       u.push 'tags', 'sf'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
       cmd = cmdSeq.singleCommand
       {method, args} = cmd.compile()
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $pushAll: { tags: ['nodejs', 'sf']} }
         { upsert: true, safe: true }
       ]
 
     it 'a single item push on fieldA, followed by a single item push on field B should result in 2 $push commands', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs'
       u.push 'keywords', 'sf'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
 
       cmdIds = Object.keys cmdSeq.commandsById
       cmdIds.should.have.length 2
@@ -965,7 +974,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { tags: 'nodejs'} }
         { upsert: true, safe: true }
       ]
@@ -975,17 +984,18 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { keywords: 'sf'} }
         { upsert: true, safe: true }
       ]
 
     it 'a single item push on field A, followed by a multi-item push on field V should result in 1 $push command and 1 $pushAll command', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs'
       u.push 'keywords', 'sf', 'socal'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
 
       cmdIds = Object.keys cmdSeq.commandsById
       cmdIds.should.have.length 2
@@ -995,7 +1005,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { tags: 'nodejs'} }
         { upsert: true, safe: true }
       ]
@@ -1005,17 +1015,18 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $pushAll: { keywords: ['sf', 'socal']} }
         { upsert: true, safe: true }
       ]
 
     it 'a multi iterm push on field A, followed by a single item push on field B should result in 1 $pushAll command and 1 $push command', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.push 'tags', 'nodejs', 'sf'
       u.push 'keywords', 'socal'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
 
       cmdIds = Object.keys cmdSeq.commandsById
       cmdIds.should.have.length 2
@@ -1025,7 +1036,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $pushAll: { tags: ['nodejs', 'sf']} }
         { upsert: true, safe: true }
       ]
@@ -1035,17 +1046,18 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { keywords: 'socal'} }
         { upsert: true, safe: true }
       ]
 
     it 'a set on field A followed by a single item push on field B should result in 1 $set an 1 $push command', ->
       isNew = false
-      u = new User _id: 1, isNew
+      id = ObjectId.generate().toHexString()
+      u = new User _id: id, isNew
       u.set 'name', 'Brian'
       u.push 'keywords', 'socal'
-      cmdSeq = Schema._oplogToCommandSequence u.oplog
+      cmdSeq = CommandSequence.fromOplog u.oplog, Schema._schemas
 
       cmdIds = Object.keys cmdSeq.commandsById
       cmdIds.should.have.length 2
@@ -1055,7 +1067,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $set: { name: 'Brian' } }
         { upsert: true, safe: true }
       ]
@@ -1065,7 +1077,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: id}
         { $push: { keywords: 'socal'} }
         { upsert: true, safe: true }
       ]
@@ -1073,12 +1085,14 @@ describe 'Schema document', ->
     it 'an oplog involving 2 different conditions should result in 2 separate queries for oplog single-item push on doc matching conditions A, then single-item push on doc matching conditions B', ->
       sharedOplog = []
       isNew = false
-      u1 = new User _id: 1, isNew, sharedOplog
-      u2 = new User _id: 2, isNew, sharedOplog
+      idA = ObjectId.generate().toHexString()
+      idB = ObjectId.generate().toHexString()
+      u1 = new User _id: idA, isNew, sharedOplog
+      u2 = new User _id: idB, isNew, sharedOplog
       u1.push 'tags', 'nodejs'
       u2.push 'tags', 'sf'
 
-      cmdSeq = Schema._oplogToCommandSequence sharedOplog
+      cmdSeq = CommandSequence.fromOplog sharedOplog, Schema._schemas
 
       cmdIds = Object.keys cmdSeq.commandsById
       cmdIds.length.should.equal 2
@@ -1088,7 +1102,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 1}
+        {_id: idA}
         { $push: { tags: 'nodejs' } }
         { upsert: true, safe: true }
       ]
@@ -1098,7 +1112,7 @@ describe 'Schema document', ->
       method.should.equal 'update'
       args.should.eql [
         'users'
-        {_id: 2}
+        {_id: idB}
         { $push: { tags: 'sf'} }
         { upsert: true, safe: true }
       ]
