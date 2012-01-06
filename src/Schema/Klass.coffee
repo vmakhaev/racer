@@ -1,4 +1,4 @@
-Klass = module.exports = -> return
+Klass = -> return
 
 initializing = false
 fnTest = if /xyz/.test(-> xyz) then /\b_super\b/ else /.*/
@@ -74,3 +74,14 @@ Klass.static 'mixin', (mixin) ->
   if proto for k, v of proto
     @::[k] = v
   @_inits.push init if init
+
+
+
+{EventEmitter} = require 'events'
+{merge} = require '../util'
+EventedKlass = Klass.extend 'EventedKlass',
+  merge new EventEmitter(),
+    init: -> EventEmitter.call @
+
+exports = module.exports = Klass
+exports.EventedKlass = EventedKlass

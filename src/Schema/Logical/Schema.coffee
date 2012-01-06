@@ -1,14 +1,8 @@
 Promise = require '../../Promise'
-{EventEmitter} = require 'events'
-{merge} = require '../../util'
 FlowBuilder = require '../FlowBuilder'
 CommandSequence = require '../CommandSequence'
 operation = require './operation'
-Klass = require '../Klass'
-
-EventedKlass = Klass.extend 'EventedKlass',
-  merge new EventEmitter(),
-    init: -> EventEmitter.call @
+{EventedKlass} = require '../Klass'
 
 # This is how we define our logical schema (vs our data source schema).
 # At this layer of abstraction:
@@ -23,6 +17,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # @param {Array} oplog, log of operations. Instead of a dirty tracking
   #     object, we keep an oplog, which we can leverage better at the Adapter
   #     layer - e.g., collapse > 1 same-path pushes into 1 push for Mongo
+  # @param {??} assignerDoc ??
   init: (attrs, @isNew = true, oplog, assignerDoc) ->
     @oplog = oplog || LogicalSchema.oplog || []
     @oplog.reset ||= -> @length = 0
@@ -150,12 +145,14 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
       continue if result is true
       errors = errors.concat result
     return if errors.length then errors else true
-  
+
 , # STATIC METHODS
+  createField: -> new Field @
+
   field: (fieldName, setToField) ->
     return field if field = @fields[fieldName]
     return @fields[fieldName] = setToField
-  
+
   cast: (val, oplog, assignerDoc) ->
     if val.constructor == Object
       # TODO Should the 2nd args here always be true?
@@ -204,7 +201,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
 #        source.addDataField @, ns, field, fieldsConf
 #      for virtual, descriptor of virtualsConf
 #        source.addVirtualField @, ns, virtual, descriptor
-    
+
     return dataSchema
 
   # Interim method used to help transition from non-Schema to
@@ -284,27 +281,21 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
         return [field, subpath + '.' + ownerPathRelToSkema]
     throw new Error "path '#{path}' does not appear to be reachable from Schema #{@_name}"
 
-  # TODO This is duplicated in DataSchema
-  castObj: (obj) ->
-    fields = @fields
-    for path, val of obj
-      field = fields[path]
-      obj[path] = field.cast val if field.cast
-    return obj
+AbstractSchema = require '../AbstractSchema'
+for _k, _v of AbstractSchema::
+  LogicalSchema::[_k] = _v
 
 LogicalSchema._schemas = {} # Maps schema namespaces -> LogicalSchema subclasses
 LogicalSchema._sources = {} # Maps source names -> DataSource instances
-LogicalSchema.extend = (name, ns, fieldsConf) ->
-  SubSkema = Klass.extend.call @, name, fieldsConf, {ns, fields: {}}
-
-  # TODO Add in Harmony Proxy server-side to use a[path] vs a.get(path)
-  for fieldName, descriptor of fieldsConf
+bootstrapField = (field, fieldName, SubSkema) ->
+  field.sources = [] # TODO Are we using field.sources?
+  field.path    = fieldName
+  field.schema  = SubSkema
+  SubSkema.field fieldName, field
+LogicalSchema.extend = (name, ns, fields) ->
+  SubSkema = EventedKlass.extend.call @, name, fields, {ns, fields: {}}
+  for fieldName, descriptor of fields
     field = LogicalSchema._createFieldFrom descriptor, fieldName
-    bootstrapField = (field, fieldName, SubSkema) ->
-      field.sources = [] # TODO Are we using field.sources?
-      field.path    = fieldName
-      field.schema  = SubSkema
-      SubSkema.field fieldName, field
     if field instanceof Promise
       field.callback (schema) ->
         field = schema.createField()
@@ -315,6 +306,8 @@ LogicalSchema.extend = (name, ns, fieldsConf) ->
   LogicalSchema._schemaPromises[name]?.fulfill SubSkema
   return LogicalSchema._schemas[ns] = SubSkema
 
+# Takes a path such as 'users.5.name', and returns
+# {Skema: User, id: '5', path: 'name'}
 LogicalSchema.fromPath = (path) ->
   pivot = path.indexOf '.'
   ns    = path.substring 0, pivot
@@ -390,17 +383,18 @@ LogicalSchema._createFieldFrom = (descriptor, fieldName) ->
     #   $type: String
     #   validator: fn
     type = @inferType type
-    delete descriptor.$type
     # Will be a Promise when the descriptor involves a
     # yet-to-be-defined LogicalSchema
     return type if type instanceof Promise
     field = type.createField()
+    delete descriptor.$type
     for method, arg of descriptor
       if Array.isArray arg
         field[method] arg...
       else
         field[method] arg
     return field
+  throw new Error "Could not create a field from: #{descriptor}"
 
 # Factory method returning new Field instances
 # generated from factory create new Type instances
@@ -460,3 +454,5 @@ LogicalSchema.type 'Number',
 LogicalSchema.type 'Array',
   cast: (list, oplog, assignerDoc) ->
     return (@memberType.cast member, oplog, assignerDoc for member in list)
+
+Field = require './Field'
