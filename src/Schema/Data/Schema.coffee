@@ -122,7 +122,7 @@ DataSchema:: =
 
 AbstractSchema = require '../AbstractSchema'
 for _k, _v of AbstractSchema
-  DataSchema[_k] = _v
+  DataSchema::[_k] = _v
 
 DataQuery = require './Query'
 for queryMethodName, queryFn of DataQuery::
