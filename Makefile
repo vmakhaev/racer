@@ -56,14 +56,14 @@ test-serial-slow:
 		$(SERIAL_TESTS_SLOW)
 
 test-persistence:
-	@NODE_ENV=test mocha \
-		--reporter spec
+	@NODE_ENV=test $(MOCHA) \
+		--reporter spec \
 		./test/Schema.mocha.coffee \
 		./test/Schema.Mongo.mocha.coffee
 
 test-mongo:
-	@NODE_ENV=test mocha \
-		--reporter spec
+	@NODE_ENV=test $(MOCHA) \
+		--reporter spec \
 		./test/Schema.Mongo.mocha.coffee
 
 test-async: test-async-fast
