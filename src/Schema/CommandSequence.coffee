@@ -1,7 +1,11 @@
+# CommandSequence holds a set of related commands and maintains a 
+# dependency graph of commands which is used to fire those commands
+# in both a parallel and serial manner upon CommandSequence::fire
+
 Promise = require '../Promise'
 {deepEqual} = require '../util'
+operation = require './Logical/operation'
 
-# @param {Object} opToCommand maps op names -> command generator
 CommandSequence = module.exports = ->
   @root          = null
   @commands      = {} # maps hash -> ns -> [Command instances]
@@ -10,9 +14,6 @@ CommandSequence = module.exports = ->
   @pendingByCid  = {} # Contains op data dependent on cid's we have yet to see
   return
 
-# CommandSequence holds a set of related commands and maintains a 
-# dependency graph of commands which is used to fire commands 
-# in both a parallel and serial manner upon CommandSequence::fire
 CommandSequence:: =
   # TODO Replace with `position cmd, before: fixedCmd, callback`
   # TODO Add tests
@@ -118,14 +119,13 @@ CommandSequence:: =
             cmd.fire (err, cid, extraAttrs) ->
               return callback err if err
               cmdPromise.fulfill cid, extraAttrs
-    
+
     return currProm
 
   fire: (callback) ->
     rootProm = @_setupPromises callback
     rootProm.fulfill()
 
-# TODO Replace this with CommandSequence.fromOplog(oplog, schemasByNs)
 # Keeping this as a separate function makes testing oplog to
 # command sequence possible.
 # TODO This should be able to handle more refined write flow control

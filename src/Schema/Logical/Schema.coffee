@@ -282,8 +282,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     throw new Error "path '#{path}' does not appear to be reachable from Schema #{@_name}"
 
 AbstractSchema = require '../AbstractSchema'
-for _k, _v of AbstractSchema::
-  LogicalSchema::[_k] = _v
+for _k, _v of AbstractSchema
+  console.log _k
+  LogicalSchema.static _k, _v
 
 LogicalSchema._schemas = {} # Maps schema namespaces -> LogicalSchema subclasses
 LogicalSchema._sources = {} # Maps source names -> DataSource instances
