@@ -283,7 +283,6 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
 
 AbstractSchema = require '../AbstractSchema'
 for _k, _v of AbstractSchema
-  console.log _k
   LogicalSchema.static _k, _v
 
 LogicalSchema._schemas = {} # Maps schema namespaces -> LogicalSchema subclasses

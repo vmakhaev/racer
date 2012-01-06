@@ -53,7 +53,7 @@ QueryDispatcher:: =
           else
             # TODO Transform conds based on dField and dField.schema
             {source, ns} = dField
-            qb = @_findOrCreateQueryBuilder(phase, source, ns, conds, dField.queryMethod || queryMethod)
+            qb = @_findOrCreateQueryBuilder(phase, dField, conds, dField.queryMethod || queryMethod)
             qb.add dField, dFieldProm
             # TODO Why have 1 dFieldProm per dField from a dataFields that all belong to the same data source?
 
