@@ -2,6 +2,7 @@ ASYNC_TESTS_FAST = $(shell find test/ -name '*.test.coffee')
 ASYNC_TESTS_SLOW = $(shell find test/ -name '*.test.slow.coffee')
 SERIAL_TESTS_FAST = $(shell find test/ -name '*.test.serial.coffee')
 SERIAL_TESTS_SLOW = $(shell find test/ -name '*.test.serial.slow.coffee')
+MOCHA = $(shell which mocha)
 
 test-single:
 	@NODE_ENV=test ./node_modules/expresso/bin/expresso \
@@ -48,14 +49,14 @@ test-serial-slow:
 		$(SERIAL_TESTS_SLOW)
 
 test-persistence:
-	@NODE_ENV=test mocha \
-		--reporter spec
+	@NODE_ENV=test $(MOCHA) \
+		--reporter spec \
 		./test/Schema.mocha.coffee \
 		./test/Schema.Mongo.mocha.coffee
 
 test-mongo:
-	@NODE_ENV=test mocha \
-		--reporter spec
+	@NODE_ENV=test $(MOCHA) \
+		--reporter spec \
 		./test/Schema.Mongo.mocha.coffee
 
 test-async: test-async-fast
