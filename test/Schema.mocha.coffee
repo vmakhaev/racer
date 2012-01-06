@@ -128,38 +128,141 @@ describe 'Schema', ->
       s = new User luckyNumbers: ['4', 8, '12', 16]
       s.get('luckyNumbers').should.eql [4, 8, 12, 16]
 
-    it 'should cast CustomSchema attributes', ->
-      Blog = Schema.extend 'Blog', 'blogs',
+    describe 'an attribute that is a CustomSchema document', ->
+      Dog = Schema.extend 'Dog', 'dogs',
         _id: String
         name: String
       User = Schema.extend 'User', 'users',
-        blog: Blog
-      s = new User blog: { _id: 5, name: 'Racer Blog' }
-      blog = s.get('blog')
-      blog.should.be.an.instanceof Blog
-      blog.get('_id').should.equal '5'
-      blog.get('name').should.equal 'Racer Blog'
+        name: String
+        pet: Dog
 
-    it 'should cast [CustomSchema] attributes', ->
+      it 'should cast CustomSchema attributes', ->
+        s = new User pet: { _id: 5, name: 'Spot' }
+        pet = s.get('pet')
+        pet.should.be.an.instanceof Dog
+        pet.get('_id').should.equal '5'
+        pet.get('name').should.equal 'Spot'
+
+      it 'should assign an instance of that schema when set to an object literal', ->
+        u = new User name: 'Brian'
+        u.set 'pet', name: 'Banana'
+        u.get('pet').should.be.an.instanceof Dog
+        u.get('pet').get('name').should.equal 'Banana'
+
+      it 'should assign an instance of that schema when set to a schema instance', ->
+        u = new User name: 'Brian'
+        u.set 'pet', new Dog name: 'Banana'
+        u.get('pet').should.be.an.instanceof Dog
+        u.get('pet').get('name').should.equal 'Banana'
+
+      it 'should raise an error if set to a non-matching Schema instance', ->
+        u = new User name: 'Brian'
+        didErr = false
+        errMsg = null
+        try
+          u.set 'pet', new User name: 'Brian'
+        catch e
+          didErr = true
+          errMsg = e.message
+        didErr.should.be.true
+        errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
+
+    describe 'an attribute that is an array of CustomSchema documents', ->
       Dog = Schema.extend 'Dog', 'dogs',
         _id: String
         name: String
         age: Number
-      User = Schema.extend 'Blog', 'blogs',
-        dogs: [Dog]
+      User = Schema.extend 'User', 'users',
+        name: String
+        pets: [Dog]
 
-      u = new User dogs: [
-        { _id: 1, name: 'Banana', age: '2'}
-        {_id: 2, name: 'Squeak', age: '8'}
-      ]
-      dogs = u.get 'dogs'
-      dogs.length.should.equal 2
-      for dog in dogs
-        dog.should.be.an.instanceof Dog
-      dogs[0].get('name').should.equal 'Banana'
-      dogs[0].get('age').should.equal 2
-      dogs[1].get('name').should.equal 'Squeak'
-      dogs[1].get('age').should.equal 8
+      it 'should cast [CustomSchema] attributes', ->
+        u = new User pets: [
+          { _id: 1, name: 'Banana', age: '2'}
+          {_id: 2, name: 'Squeak', age: '8'}
+        ]
+        pets = u.get 'pets'
+        pets.length.should.equal 2
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[0].get('age').should.equal 2
+        pets[1].get('name').should.equal 'Squeak'
+        pets[1].get('age').should.equal 8
+
+      it 'should assign an array of Schema instance to the attribute of the same name, when set to an array of object literals',  ->
+        u = new User name: 'Brian'
+        u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+        pets = u.get('pets')
+        pets.should.have.length 2
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[1].get('name').should.equal 'Squeak'
+
+      it 'should assign an array of Schema instances directly when set to this array', ->
+        u = new User name: 'Brian'
+        u.set 'pets', [
+          new Dog name: 'Banana'
+          new Dog name: 'Squeak'
+        ]
+        pets = u.get('pets')
+        pets.should.have.length 2
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[1].get('name').should.equal 'Squeak'
+
+      it 'should raise an error if set to an array of SomeSchema instances that contains at least one non-matching SchemaB', ->
+        u = new User name: 'Brian'
+        didErr = false
+        errMsg = null
+        try
+          u.set 'pets', [
+            new User name: 'Banana'
+            new Dog name: 'Squeak'
+          ]
+        catch e
+          didErr = true
+          errMsg = e.message
+        didErr.should.be.true
+        errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
+
+      it 'pushing an object literal onto the field should convert the literal into a Schema doc and append it to the attribute', ->
+        u = new User name: 'Brian'
+        u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+        u.push 'pets', {name: 'Pogo'}
+        pets = u.get('pets')
+        pets.should.have.length 3
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[1].get('name').should.equal 'Squeak'
+        pets[2].get('name').should.equal 'Pogo'
+
+      it 'pushing a Schema instance onto the field should push this instance directly onto the existing array of instances', ->
+        u = new User name: 'Brian'
+        u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
+        u.push 'pets', new Dog name: 'Pogo'
+        pets = u.get('pets')
+        pets.should.have.length 3
+        for pet in pets
+          pet.should.be.an.instanceof Dog
+        pets[0].get('name').should.equal 'Banana'
+        pets[1].get('name').should.equal 'Squeak'
+        pets[2].get('name').should.equal 'Pogo'
+
+      it 'pushing a SchemaB instance onto a [SchemaA] field should raise an error', ->
+        u = new User name: 'Brian'
+        didErr = false
+        errMsg = null
+        try
+          u.push 'pets', new User name: 'Banana'
+        catch e
+          didErr = true
+          errMsg = e.message
+        didErr.should.be.true
+        errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
 
   describe 'Validation', ->
     it 'should be able to specify a validator inside Schema definition', ->
@@ -230,24 +333,24 @@ describe 'Schema', ->
       blog = new Blog username: 'a_valid_username@gmail.com'
       blog.validate().should.be.true
 
-  # TODO test inheritance from grandparent types
+  it 'TODO should test inheritane from grandparent types'
 
-  # TODO interpolate field into validation message
+  it 'TODO should interpolate field into validation message'
 
-  # Querying
-  # TODO Add this back in and update the test
-#  'Schema.findById should callback with the appropriate object': (done) ->
-#    User = Schema.extend 'User', 'users',
-#      id: Number
-#      name: String
-#
-#    # User.source Mongo
-#
-#    user = { id: 1, name: 'Brian' }
-#    # model.set 'users.1', user
-#    User.create user, (err) ->
-#      should.equal null, err
-#      User.findById 1, (err, val) ->
-#        should.equal null, err
-#        val.should.equal user
-#        done()
+  describe 'Querying', ->
+    # TODO Update this test
+    it 'Schema.findById should callback with the appropriate object', (done) ->
+      User = Schema.extend 'User', 'users',
+        id: Number
+        name: String
+
+      # User.source Mongo
+
+      user = { id: 1, name: 'Brian' }
+      # model.set 'users.1', user
+      User.create user, (err) ->
+        should.equal null, err
+        User.findById 1, (err, val) ->
+          should.equal null, err
+          val.should.equal user
+          done()

@@ -258,163 +258,65 @@ describe 'Schema document', ->
           done err
 
   describe 'a field that maps to a Schema - aka embedded doc fields', ->
-    it 'should assign an instance of that schema when set to an object literal', ->
+    beforeEach (done) -> mongo.flush done
+    it 'should properly persist a set to an object literal', (done) ->
       u = new User name: 'Brian'
       u.set 'pet', name: 'Banana'
-      u.get('pet').should.be.an.instanceof Dog
-      u.get('pet').get('name').should.equal 'Banana'
-    it 'should assign an instance of that schema when set to a schema instance', ->
+      u.save (err, createdUser) ->
+        should.equal null, err
+        _id = ObjectId.fromString createdUser.get '_id'
+        # dogId = createdUser.get('pet').get('_id')
+        mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
+          json.should.eql
+            _id: _id
+            name: 'Brian'
+            pet:
+              # _id: dogId
+              name: 'Banana'
+          done err
+    it 'should be able to retrieve the embedded doc as the configure logical schema relation', (done) ->
       u = new User name: 'Brian'
-      u.set 'pet', new Dog name: 'Banana'
-      u.get('pet').should.be.an.instanceof Dog
-      u.get('pet').get('name').should.equal 'Banana'
-    it 'should raise an error if set to a non-matching Schema instance', ->
-      u = new User name: 'Brian'
-      didErr = false
-      errMsg = null
-      try
-        u.set 'pet', new User name: 'Brian'
-      catch e
-        didErr = true
-        errMsg = e.message
-      didErr.should.be.true
-      errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
-
-    describe 'persisting', ->
-      beforeEach (done) -> mongo.flush done
-      it 'should properly persist a set to an object literal', (done) ->
-        u = new User name: 'Brian'
-        u.set 'pet', name: 'Banana'
-        u.save (err, createdUser) ->
-          should.equal null, err
-          _id = ObjectId.fromString createdUser.get '_id'
-          # dogId = createdUser.get('pet').get('_id')
-          mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
-            json.should.eql
-              _id: _id
-              name: 'Brian'
-              pet:
-                # _id: dogId
-                name: 'Banana'
-            done err
-      it 'should be able to retrieve the embedded doc as the configure logical schema relation', (done) ->
-        u = new User name: 'Brian'
-        u.set 'pet', name: 'Banana'
-        u.save (err, createdUser) ->
-          should.equal null, err
-          _id = createdUser.get '_id'
-          User.findOne {_id}, {select: ['_id', 'name', 'pet']}, (err, foundUser) ->
-            dog = foundUser.get 'pet'
-            dog.should.be.an.instanceof Dog
-            dog.get('name').should.equal 'Banana'
-            done err
+      u.set 'pet', name: 'Banana'
+      u.save (err, createdUser) ->
+        should.equal null, err
+        _id = createdUser.get '_id'
+        User.findOne {_id}, {select: ['_id', 'name', 'pet']}, (err, foundUser) ->
+          dog = foundUser.get 'pet'
+          dog.should.be.an.instanceof Dog
+          dog.get('name').should.equal 'Banana'
+          done err
 
   describe 'a field that maps to [Schema] - aka embedded array doc fields', ->
-    it 'should assign an array of Schema instance to the attribute of the same name, when set to an array of object literals',  ->
+    beforeEach (done) -> mongo.flush done
+    it 'should persist the [Schema] relation as an embedded array of object literals in mongo', (done) ->
       u = new User name: 'Brian'
-      u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
-      pets = u.get('pets')
-      pets.should.have.length 2
-      for pet in pets
-        pet.should.be.an.instanceof Dog
-      pets[0].get('name').should.equal 'Banana'
-      pets[1].get('name').should.equal 'Squeak'
+      u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
+      u.save (err) ->
+        should.equal null, err
+        _id = ObjectId.fromString u.get '_id'
+        mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
+          json.should.eql
+            _id: _id
+            name: 'Brian'
+            pets: [
+              { name: 'Banana' }
+              { name: 'Squeak' }
+            ]
+          done err
 
-    it 'should assign an array of Schema instances directly when set to this array', ->
+    it 'should be able to properly retrieve an embedded array of docs as the configured logical schema relation [Schema]', (done) ->
       u = new User name: 'Brian'
-      u.set 'pets', [
-        new Dog name: 'Banana'
-        new Dog name: 'Squeak'
-      ]
-      pets = u.get('pets')
-      pets.should.have.length 2
-      for pet in pets
-        pet.should.be.an.instanceof Dog
-      pets[0].get('name').should.equal 'Banana'
-      pets[1].get('name').should.equal 'Squeak'
-
-    it 'should raise an error if set to an array of SomeSchema instances that contains at least one non-matching SchemaB', ->
-      u = new User name: 'Brian'
-      didErr = false
-      errMsg = null
-      try
-        u.set 'pets', [
-          new User name: 'Banana'
-          new Dog name: 'Squeak'
-        ]
-      catch e
-        didErr = true
-        errMsg = e.message
-      didErr.should.be.true
-      errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
-
-    it 'pushing an object literal onto the field should convert the literal into a Schema doc and append it to the attribute', ->
-      u = new User name: 'Brian'
-      u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
-      u.push 'pets', {name: 'Pogo'}
-      pets = u.get('pets')
-      pets.should.have.length 3
-      for pet in pets
-        pet.should.be.an.instanceof Dog
-      pets[0].get('name').should.equal 'Banana'
-      pets[1].get('name').should.equal 'Squeak'
-      pets[2].get('name').should.equal 'Pogo'
-
-    it 'pushing a Schema instance onto the field should push this instance directly onto the existing array of instances', ->
-      u = new User name: 'Brian'
-      u.set 'pets', [{name: 'Banana'}, {name: 'Squeak'}]
-      u.push 'pets', new Dog name: 'Pogo'
-      pets = u.get('pets')
-      pets.should.have.length 3
-      for pet in pets
-        pet.should.be.an.instanceof Dog
-      pets[0].get('name').should.equal 'Banana'
-      pets[1].get('name').should.equal 'Squeak'
-      pets[2].get('name').should.equal 'Pogo'
-
-    it 'pushing a SchemaB instance onto a [SchemaA] field should raise an error', ->
-      u = new User name: 'Brian'
-      didErr = false
-      errMsg = null
-      try
-        u.push 'pets', new User name: 'Banana'
-      catch e
-        didErr = true
-        errMsg = e.message
-      didErr.should.be.true
-      errMsg.indexOf('is neither an Object nor a Dog').should.not.equal -1
-
-    describe 'persistence', ->
-      beforeEach (done) -> mongo.flush done
-      it 'should persist the [Schema] relation as an embedded array of object literals in mongo', (done) ->
-        u = new User name: 'Brian'
-        u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
-        u.save (err) ->
-          should.equal null, err
-          _id = ObjectId.fromString u.get '_id'
-          mongo.adapter.findOne 'users', {_id}, {}, (err, json) ->
-            json.should.eql
-              _id: _id
-              name: 'Brian'
-              pets: [
-                { name: 'Banana' }
-                { name: 'Squeak' }
-              ]
-            done err
-
-      it 'should be able to properly retrieve an embedded array of docs as the configured logical schema relation [Schema]', (done) ->
-        u = new User name: 'Brian'
-        u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
-        u.save (err) ->
-          should.equal null, err
-          _id = u.get '_id'
-          User.findOne {_id}, {select: ['_id', 'pets']}, (err, foundUser) ->
-            pets = foundUser.get 'pets'
-            for pet in pets
-              pet.should.be.an.instanceof Dog
-            pets[0].get('name').should.equal 'Banana'
-            pets[1].get('name').should.equal 'Squeak'
-            done err
+      u.push 'pets', {name: 'Banana'}, {name: 'Squeak'}
+      u.save (err) ->
+        should.equal null, err
+        _id = u.get '_id'
+        User.findOne {_id}, {select: ['_id', 'pets']}, (err, foundUser) ->
+          pets = foundUser.get 'pets'
+          for pet in pets
+            pet.should.be.an.instanceof Dog
+          pets[0].get('name').should.equal 'Banana'
+          pets[1].get('name').should.equal 'Squeak'
+          done err
 
   describe 'Refs', ->
     beforeEach (done) -> mongo.flush done
