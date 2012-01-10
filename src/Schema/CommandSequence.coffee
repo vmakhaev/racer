@@ -1,6 +1,9 @@
 # CommandSequence holds a set of related commands and maintains a 
 # dependency graph of commands which is used to fire those commands
 # in both a parallel and serial manner upon CommandSequence::fire
+#
+# We use it from Logical/Schema.coffee via:
+#     CommandSequence.fromOplog(oplog, schemas).fire (err, cid, extraAttrs) ->
 
 Promise = require '../Promise'
 {deepEqual} = require '../util'
@@ -13,6 +16,24 @@ CommandSequence = module.exports = ->
   @commandsByCid = {}
   @pendingByCid  = {} # Contains op data dependent on cid's we have yet to see
   return
+
+# Keeping this as a separate function makes testing oplog to
+# command sequence possible.
+# TODO This should be able to handle more refined write flow control
+# TODO Handle nested paths
+CommandSequence.fromOplog = (oplog, schemasByNs) ->
+  cmdSeq = new CommandSequence
+  for op in oplog
+    {doc, ns, conds, method, path, args} = operation.splat op
+    LogicalSkema = schemasByNs[ns]
+    {dataFields} = logicalField = LogicalSkema.fields[path]
+    # TODO How to modify for STM? Need rollback mechanism
+    for dataField in dataFields
+      {source} = dataField
+      # In order to modify cmdSeq, we delegate to the data
+      # source, which delegates the appropriate data type
+      source[method] cmdSeq, doc, dataField, conds, args...
+  return cmdSeq
 
 CommandSequence:: =
   # TODO Replace with `position cmd, before: fixedCmd, callback`
@@ -126,20 +147,3 @@ CommandSequence:: =
     rootProm = @_setupPromises callback
     rootProm.fulfill()
 
-# Keeping this as a separate function makes testing oplog to
-# command sequence possible.
-# TODO This should be able to handle more refined write flow control
-# TODO Handle nested paths
-CommandSequence.fromOplog = (oplog, schemasByNs) ->
-  cmdSeq = new CommandSequence
-  for op in oplog
-    {doc, ns, conds, method, path, args} = operation.splat op
-    LogicalSkema = schemasByNs[ns]
-    {dataFields} = logicalField = LogicalSkema.fields[path]
-    # TODO How to modify for STM? Need rollback mechanism
-    for dataField in dataFields
-      {source} = dataField
-      # In order to modify cmdSeq, we delegate to the data
-      # source, which delegates the appropriate data type
-      source[method] cmdSeq, doc, dataField, conds, args...
-  return cmdSeq
