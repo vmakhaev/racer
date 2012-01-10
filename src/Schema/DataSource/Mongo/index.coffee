@@ -66,7 +66,7 @@ MongoSource = module.exports = DataSource.extend
 
     throw new Error "Unsupported type descriptor #{descriptor}"
 
-  # Returns the parameters used to initialize a Virtual type instances
+  # Returns the parameters used to initialize a Virtual type instance
   # based on the meaning of the descriptor.
   virtualParams: (descriptor) ->
     # Descriptor for inverse of Ref or [Ref]

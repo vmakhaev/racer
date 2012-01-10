@@ -90,7 +90,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   get: (attr) -> return @_json[attr]
 
   pkey: '_id'
-  getPkey: return @_json[@pkey]
+  getPkey: -> @_json[@pkey]
 
   del: (attr, callback) ->
     if pkeyVal = @getPkey()
