@@ -55,6 +55,7 @@ Promise:: =
 
   clearValue: ->
     delete @value
+    @fulfilled = false
     cbs = @clearValueCallbacks
     callback.call scope for [callback, scope] in cbs
     @clearValueCallbacks = []
@@ -64,14 +65,24 @@ Promise::callback = Promise::on
 
 Promise.parallel = (promises) ->
   compositePromise = new Promise
-  dependencies = promises.length
-  parallelVals = []
-  for promise, i in promises
-    do (i) ->
-      promise.callback (vals...) ->
-        parallelVals[i] = vals
-        --dependencies || compositePromise.fulfill parallelVals...
-    promise.onClearValue -> compositePromise.clearValue()
+  if Array.isArray promises
+    numDependencies = promises.length
+    parallelVals = []
+    for promise, i in promises
+      do (i) ->
+        promise.callback (vals...) ->
+          parallelVals[i] = vals
+          --numDependencies || compositePromise.fulfill parallelVals...
+      promise.onClearValue -> compositePromise.clearValue()
+  else
+    numDependencies = Object.keys(promises).length
+    valsByName = {}
+    for name, promise of promises
+      do (name) ->
+        promise.callback (val) ->
+          valsByName[name] = val
+          --numDependencies || compositePromise.fulfill valsByName
+      promise.onClearValue -> compositePromise.clearValue()
   return compositePromise
 
 Promise.transform = (transformFn) ->
@@ -80,19 +91,3 @@ Promise.transform = (transformFn) ->
   transPromise.fulfill = (val) ->
     origTransFulfill.call @, transformFn val
   return transPromise
-
-Promise.pipe = (promiseA, promiseB) ->
-  pipePromise = new Promise
-  vals = []
-  origPipeFulfill = pipePromise.fulfill
-  # TODO Handle multiple arguments vals...
-  pipePromise.fulfill = (val) ->
-    promiseA.fulfill val
-  promiseA.bothback (err, val) ->
-    vals[0] = val unless err
-    promiseB.resolve err, val
-  promiseB.bothback (err, val) ->
-    vals[1] = val unless err
-    origPipeFulfill.resolve err, vals
-
-  return pipePromise

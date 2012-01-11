@@ -118,7 +118,25 @@ module.exports =
       p2Val = val
     p = Promise.parallel [p1, p2]
     p.callback (val) ->
-      val.should.be.true
+      val.should.eql ['hello']
+      p1Val.should.equal 'hello'
+      p2Val.should.equal 'world'
+      done()
+    p1.fulfill 'hello'
+    p2.fulfill 'world'
+
+  'Promise.parallel should callback with an object if the input is a dictionary of promises': wrapTest (done) ->
+    p1 = new Promise
+    p2 = new Promise
+    p1Val = null
+    p2Val = null
+    p1.callback (val) ->
+      p1Val = val
+    p2.callback (val) ->
+      p2Val = val
+    p = Promise.parallel a: p1, b: p2
+    p.callback (val) ->
+      val.should.eql a: 'hello', b: 'world'
       p1Val.should.equal 'hello'
       p2Val.should.equal 'world'
       done()
@@ -156,19 +174,3 @@ module.exports =
       val.should.equal 100
       done()
     transP.fulfill 1
-
-  '''Promise.pipe(promiseA, promiseB) should create a new promise that passes the 
-  result of promiseA to promiseB and whose fulfilled value is the list of values of
-  promiseA.fulfill and promiseB.fulfill''': wrapTest (done) ->
-    promiseA = new Promise
-    promiseB = Promise.transform (val) -> val * 2
-    promise = Promise.pipe promiseA, promiseB
-    promise.callback ([valA, valB]) ->
-      valA.should.equal 10
-      valB.should.equal 20
-      done()
-    promiseA.callback (val) ->
-      val.should.equal 10
-    promiseB.callback (val) ->
-      val.should.equal 20
-    promise.fulfill 10
