@@ -62,9 +62,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     return Object.create @,
       _atomic: value: true
 
-  # TODO Re-write this -- beginning with removing commented out code
   set: (attr, val, callback) ->
-#    oplogIndex = @oplog.length
+    # Remember oplogIndex because @_assignAttrs modifies @oplog
+    oplogIndex = @oplog.length
     val = @_assignAttrs attr, val
     if pkeyVal = @getPkey()
       conds = {}
@@ -77,9 +77,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
         setTo[@pkey] = fkey
       else
         setTo = cid: val.cid
-#      op = [@, @constructor.ns, conds, 'set', attr, setTo]
-#      @oplog.splice oplogIndex, 0, op
-      @oplog.push [@, @constructor.ns, conds, 'set', attr, setTo]
+      op = [@, @constructor.ns, conds, 'set', attr, setTo]
+      @oplog.splice oplogIndex, 0, op
+#      @oplog.push [@, @constructor.ns, conds, 'set', attr, setTo]
       # Leaving off a val means assign this attr to the
       # document represented in the next op
     else
