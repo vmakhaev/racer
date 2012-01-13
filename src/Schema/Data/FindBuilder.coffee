@@ -1,17 +1,15 @@
 {merge} = require '../../util'
 DataQueryBuilder = require './QueryBuilder'
 
-FindBuilder = module.exports = (@source, @conds) ->
+FindBuilder = module.exports = (@DataSkema, @conds) ->
+  @source = @DataSkema.source
   DataQueryBuilder.call @, 'find'
   return
 
 FindBuilder:: = merge new DataQueryBuilder('find'),
+  constructor: FindBuilder
   queryCallback: (err, arr) ->
-    fields = @_includeFields
-    for path, field of fields
-      if field.type.isPkey
-        pkeyPath = path
-        break
+    pkeyPath = @DataSkema.pkey
     throw new Error 'Missing pkey path' unless pkeyPath
 
     # Adds search results, e.g.,
@@ -27,5 +25,7 @@ FindBuilder:: = merge new DataQueryBuilder('find'),
         resolveToByPath[path] ||= []
         resolveToByPath[path][i] = {val, pkeyVal}
     fieldPromises = @_fieldPromises
+    fields = @_includeFields
     for path, promise of fieldPromises
       promise.resolve err, resolveToByPath[path], fields[path]
+    return

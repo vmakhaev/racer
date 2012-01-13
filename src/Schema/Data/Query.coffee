@@ -14,6 +14,7 @@ DataQuery:: = merge new AbstractQuery(),
   fields: (@_fields) ->
 
   fire: (fireCallback) ->
+    console.log @
     conds = @_castConditions()
 
     # 2. Determine if we should generate any other queries

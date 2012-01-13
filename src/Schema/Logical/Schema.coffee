@@ -62,8 +62,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     return Object.create @,
       _atomic: value: true
 
+  # TODO Re-write this -- beginning with removing commented out code
   set: (attr, val, callback) ->
-    oplogIndex = @oplog.length
+#    oplogIndex = @oplog.length
     val = @_assignAttrs attr, val
     if pkeyVal = @getPkey()
       conds = {}
@@ -76,8 +77,9 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
         setTo[@pkey] = fkey
       else
         setTo = cid: val.cid
-      op = [@, @constructor.ns, conds, 'set', attr, setTo]
-      @oplog.splice oplogIndex, 0, op
+#      op = [@, @constructor.ns, conds, 'set', attr, setTo]
+#      @oplog.splice oplogIndex, 0, op
+      @oplog.push [@, @constructor.ns, conds, 'set', attr, setTo]
       # Leaving off a val means assign this attr to the
       # document represented in the next op
     else
@@ -179,7 +181,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # We use this to define a "data source schema" and link it to
   # this "logical Schema".
   createDataSchema: (source, ns, fieldsConf, virtualsConf) ->
-    # (source, fieldsConf)
+    # createDataSchema(source, fieldsConf)
     if arguments.length == 2
       virtualsConf = null
       fieldsConf = ns
@@ -188,16 +190,16 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
     if arguments.length == 3
       switch typeof ns
         when 'boolean', 'string'
-          # (source, ns, fieldsConf)
+          # createDataSchema(source, ns, fieldsConf)
           virtualsConf = null
         else
-          # (source, fieldsConf, virtualsConf)
+          # createDataSchema(source, fieldsConf, virtualsConf)
           virtualsConf = fieldsConf
           fieldsConf = ns
           ns = @ns # Inherit data schema ns from logical schema
 
     # else
-    # (source, ns, fieldsConf, virtualsConf)
+    # createDataSchema(source, ns, fieldsConf, virtualsConf)
 
     LogicalSchema._sources[source._name] ||= source
     dataSchema = source.createDataSchema {LogicalSkema: @, ns}, fieldsConf, virtualsConf
@@ -240,7 +242,7 @@ LogicalSchema = module.exports = EventedKlass.extend 'LogicalSchema',
   # isn't a flow defined for a given field, the querying
   # implementation will use a read flow defined for the
   # LogicalSchema to which the field belongs.
-  # 
+  #
   # Invoking this fn signature will result in defining
   # a fallback read flow for the entire LogicalSchema
   #   defineReadFlow(function (flow) {

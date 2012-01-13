@@ -59,20 +59,19 @@ DataSchema:: =
   cast: (val) ->
     fields = @fields
     for path, v of val
-      type = fields[path].type
-      if type.cast
-        val[path] = type.cast v
+      {type} = fields[path]
+      val[path] = type.cast v if type.cast
+    return val
+
+  uncast: (val) ->
+    fields = @fields
+    for path, v of val
+      {type} = fields[path]
+      val[path] = type.uncast v if type.uncast
     return val
 
   # Be able to act like a type
   createField: (opts) -> new DataField @, opts
-  uncast: (val) ->
-    fields = @fields
-    for path, v of val
-      field = fields[path]
-      if field.type.uncast
-        val[path] = field.type.uncast v
-    return val
 
   # TODO addDataField ?
 
@@ -86,6 +85,7 @@ DataSchema:: =
     source = @source
     conf = {path, ns, logicalField, source}
     return conf unless type = source.inferType descriptor
+    if type.isPkey then @pkey = path
     return type.createField conf
 
   _createVirtualFrom: (descriptor, ns, path, logicalField) ->
@@ -132,7 +132,8 @@ for queryMethodName, queryFn of DataQuery::
       query = new DataQuery @
       return queryFn.apply query, args
 
-# Used to generate DataSchema.Buffer, which is used in DataSource::schema(schemaName) to buffer up methods invoked on an instance of DataSchema that has not yet been defined
+# Used to generate DataSchema.Buffer, which is used in DataSource::schema(schemaName)
+# to buffer up methods invoked on an instance of DataSchema that has not yet been defined
 bufferify = (Klass) ->
   klassProto = Klass::
   BufferKlass = -> return

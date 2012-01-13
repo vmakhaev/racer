@@ -78,14 +78,13 @@ MongoSource = module.exports = DataSource.extend
       DataSkema = query.schema
       conds = query._conditions
       for path, toEval of conds
+        # e.g., toEval = '@user._id'
         [_, targetPath] = toEval.split '.'
         conds[path] = (doc) -> doc[targetPath]
         fkey = path
         pkey = targetPath
-#      type = switch query.queryMethod
       return switch query.queryMethod
         when 'findOne' then types.OneInverse
-#        when 'find'    then types.ManyInverse
         when 'find' then {
           typeParams:
             translateSet: (cmd, cmdSeq, path, val, doc, dataField) ->
@@ -110,14 +109,17 @@ MongoSource = module.exports = DataSource.extend
             queryMethod: 'find'
             query: query
             querify: (conds) ->
-              conds = @conds conds
               _query = @query.clone()
-              _query._conditions = conds
+              _query._conditions = @conds conds
               return _query
             conds: (conds) ->
               _conds = @query._conditions
-              _conds[k] = _conds[k](conds) for k of _conds
-              return _conds
+              console.log "$$$$$$$"
+              console.log conds
+              console.log _conds
+              xfConds = {}
+              xfConds[k] = _conds[k](conds) for k of _conds
+              return xfConds
         }
 
       # TODO Deprecate the following code?

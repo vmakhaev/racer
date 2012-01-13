@@ -8,6 +8,7 @@ DataQueryBuilder = module.exports = (@_queryMethod) ->
 
 # TODO
 DataQueryBuilder.condsRelTo = (dataField, LogicalSkema, conds) ->
+  throw new Error 'Unimplemented'
 
 DataQueryBuilder:: =
   notifyAboutPrevQuery: (logicalField, didFind) ->
@@ -43,5 +44,4 @@ DataQueryBuilder:: =
       return DataSkema[queryMethod] @conds, select: fieldPaths
 
     console.warn 'The query has no fields to look up!'
-    console.trace()
     return new Promise fulfill: undefined

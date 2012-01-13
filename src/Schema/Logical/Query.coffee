@@ -8,6 +8,7 @@ LogicalQuery = module.exports = (schema, criteria) ->
   return
 
 LogicalQuery:: = merge new AbstractQuery(),
+  constructor: LogicalQuery
   # Takes the state of the current query, and fires off the query to all
   # data sources; then, collects and re-assembles the data into the
   # logical document and passes it to callback(err, doc)
@@ -33,17 +34,18 @@ LogicalQuery:: = merge new AbstractQuery(),
       logicalFields = ([field, remainder] for _, field of RootLogicalSkema.fields when ! (field.isRelationship))
 
     conds = @_castConditions() # Logical schema casting of the query condition vals
-    queryMethod = @queryMethod
-    qDispatcher = new QueryDispatcher queryMethod
+    qDispatcher = new QueryDispatcher(queryMethod = @queryMethod)
 
     for [logicalField, schemaPath] in logicalFields
       qDispatcher.add logicalField, conds
 
     firePromise = new Promise bothback: fireCallback
     qDispatcher.fire (err, lFieldVals...) ->
+    # TODO Add this back in when we convert to Promise.parallel({...})
+#    qDispatcher.fire (err, lFieldValsByPath) ->
       return firePromise.error err if err
       # TODO Maybe create a version of Promise.parallel that returns an Object as val in (err, val)
-      switch queryMethod
+      result = switch queryMethod
         when 'findOne'
           attrs = {}
           for [lFieldVal], i in lFieldVals
@@ -51,7 +53,7 @@ LogicalQuery:: = merge new AbstractQuery(),
             [logicalField, schemaPath] = logicalFields[i]
             attrPath = logicalField.expandPath schemaPath
             attrs[attrPath] = lFieldVal
-          result = new RootLogicalSkema attrs, false
+          new RootLogicalSkema attrs, false
         when 'find'
           memberByPkey = {}
           arrOfAttrs = []
@@ -64,10 +66,7 @@ LogicalQuery:: = merge new AbstractQuery(),
                 member = memberByPkey[pkeyVal] = {}
                 arrOfAttrs.push member
               member[attrPath] = val
-          result = (new RootLogicalSkema attrs, false for attrs in arrOfAttrs)
+          (new RootLogicalSkema attrs, false for attrs in arrOfAttrs)
 
       firePromise.fulfill result
-
     return firePromise
-
-LogicalQuery::constructor = LogicalQuery

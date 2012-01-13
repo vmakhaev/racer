@@ -82,6 +82,7 @@ describe 'Schema document', ->
     status: String
     author: mongo.User.field '_id'
     # author: mongo.pointsTo User, '_id'
+    # author: ObjectId
 
   Group = Schema.extend 'Group', 'groups',
     _id: String

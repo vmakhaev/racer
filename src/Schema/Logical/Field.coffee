@@ -47,19 +47,21 @@ LogicalField:: =
     return if errors.length then errors else true
 
   genDataFieldReadPhases: ->
-    return dataFieldReadPhases if dataFieldReadPhases = @dataFieldReadPhases
-    dataFieldReadPhases = @dataFieldReadPhases = []
-    dataFields    = @dataFields
+    return phases if phases = @dataFieldReadPhases
+    phases     = @dataFieldReadPhases = []
+    dataFields = @dataFields
 
     if readFlow = @readFlow || @schema.readFlow
       for [sources, parallelCb] in readFlow
         matches = (f for f in dataFields when -1 != sources.indexOf f.source)
         matches.parallelCallback = parallelCb
-        dataFieldReadPhases.push matches
+        phases.push matches
     else
-      console.warn "Source lookup order not explicitly defined for this logical field `#{@path}` or its logical schema `#{@schema._name}`. Falling back to parallel fetching of `#{@path}` dataFields"
-      dataFieldReadPhases.push dataFields
-    return dataFieldReadPhases
+      console.warn 'Source lookup order not explicitly defined for this logical field ' +
+        "`#{@path}` or its logical schema `#{@schema._name}`. Falling back to parallel " +
+        "fetching of `#{@path}` dataFields"
+      phases.push dataFields
+    return phases
 
   expandPath: (pathToOwnerSchema) ->
     attrPath = pathToOwnerSchema

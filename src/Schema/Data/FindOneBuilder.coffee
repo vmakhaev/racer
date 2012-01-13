@@ -1,11 +1,13 @@
 {merge} = require '../../util'
 DataQueryBuilder = require './QueryBuilder'
 
-FindOneBuilder = module.exports = (@source, @conds) ->
+FindOneBuilder = module.exports = (@DataSkema, @conds) ->
+  @source = @DataSkema.source
   DataQueryBuilder.call @, 'findOne'
   return
 
 FindOneBuilder:: = merge new DataQueryBuilder('findOne'),
+  constructor: FindOneBuilder
   queryCallback: (err, json) ->
     fieldPromises = @_fieldPromises
     fields = @_includeFields
