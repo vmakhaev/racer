@@ -1,20 +1,17 @@
-require('../src/util/debug')('notifyPointers')
+transaction = require '../src/transaction'
 Model = require '../src/Model'
 should = require 'should'
-util = require './util'
-transaction = require '../src/transaction'
-wrapTest = util.wrapTest
+{calls} = require './util'
+{mockSocketModel, mockSocketEcho} = require './util/model'
 
-{mockSocketModel} = require './util/model'
+describe 'Model', ->
 
-module.exports =
-
-  'get should return the adapter data when there are no pending transactions': ->
+  it 'get should return the adapter data when there are no pending transactions', ->
     model = new Model
     model._adapter._data = world: {a: 1}
     model.get().should.eql {a: 1}
   
-  'test internal creation of client transactions on set': ->
+  it 'test internal creation of client transactions on set', ->
     model = new Model '0'
     
     model.set 'color', 'green'
@@ -25,20 +22,18 @@ module.exports =
     model._txnQueue.should.eql ['0.0', '0.1']
     model._txns['0.0'].slice().should.eql transaction.create base: 0, id: '0.0', method: 'set', args: ['color', 'green']
     model._txns['0.1'].slice().should.eql transaction.create base: 0, id: '0.1', method: 'set', args: ['count', 0]
-  
-  'test client performs set on receipt of message': ->
-    [sockets, model] = mockSocketModel()
+
+  it 'test client performs set on receipt of message', ->
+    [model, sockets] = mockSocketModel()
     sockets.emit 'txn', transaction.create(base: 1, id: 'server0.0', method: 'set', args: ['color', 'green']), 1
     model.get('color').should.eql 'green'
-    model._adapter.version().should.eql 1
+    model._adapter.version.should.eql 1
     sockets._disconnect()
-  
-  'test client set roundtrip with server echoing transaction': wrapTest (done) ->
-    ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
-      txn.slice().should.eql transaction.create base: 0, id: '0.0', method: 'set', args: ['color', 'green']
-      transaction.base txn, ++ver
-      sockets.emit 'txn', txn, ver
+
+  it 'test client set roundtrip with server echoing transaction', (done) ->
+    [model, sockets] = mockSocketEcho '0'
+    model.socket.on 'txnOk', (txnId) ->
+      txnId.should.equal '0.0'
       model.get('color').should.eql 'green'
       model._txnQueue.should.eql []
       model._txns.should.eql {}
@@ -47,48 +42,43 @@ module.exports =
     
     model.set 'color', 'green'
     model._txnQueue.should.eql ['0.0']
-  
-  'test client del roundtrip with server echoing transaction': wrapTest (done) ->
-    ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
-      txn.slice().should.eql transaction.create base: 0, id: '0.0', method: 'del', args: ['color']
-      transaction.base txn, ++ver
-      sockets.emit 'txn', txn, ver
-      model._adapter._data.should.specEql world: {}
+
+  it 'test client del roundtrip with server echoing transaction', (done) ->
+    [model, sockets] = mockSocketEcho '0'
+    model.socket.on 'txnOk', (txnId) ->
+      txnId.should.equal '0.0'
+      model.get().should.eql {}
       model._txnQueue.should.eql []
       model._txns.should.eql {}
       sockets._disconnect()
       done()
-  
+
     model._adapter._data = world: {color: 'green'}
     model.del 'color'
     model._txnQueue.should.eql ['0.0']
 
-  'test client push roundtrip with server echoing transaction': wrapTest (done) ->
-    ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
-      txn.slice().should.eql transaction.create base: 0, id: '0.0', method: 'push', args: ['colors', 'red']
-      transaction.base txn, ++ver
-      sockets.emit 'txn', txn, ver
+  it 'test client push roundtrip with server echoing transaction', (done) ->    
+    [model, sockets] = mockSocketEcho '0'
+    model.socket.on 'txnOk', (txnId) ->
+      txnId.should.equal '0.0'
       model.get('colors').should.specEql ['red']
       model._txnQueue.should.eql []
       model._txns.should.eql {}
       sockets._disconnect()
       done()
-  
+
     model.push 'colors', 'red'
     model._txnQueue.should.eql ['0.0']
-  
-  'setting on a private path should only be applied locally': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0', 'txn', done
+
+  it 'setting on a private path should only be applied locally', calls 0, (done) ->
+    [model, sockets] = mockSocketModel '0', 'txn', done
     model.set '_color', 'green'
     model.get('_color').should.eql 'green'
     model._txnQueue.should.eql []
     sockets._disconnect()
-  , 0
-  
-  'transactions should be removed after failure': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
+
+  it 'transactions should be removed after failure', (done) ->
+    [model, sockets] = mockSocketModel '0', 'txn', (txn) ->
       sockets.emit 'txnErr', 'conflict', '0.0'
       model._txnQueue.should.eql []
       model._txns.should.eql {}
@@ -98,8 +88,8 @@ module.exports =
     model.set 'color', 'green'
     model._txnQueue.should.eql ['0.0']
   
-  'transactions received out of order should be applied in order': ->
-    [sockets, model] = mockSocketModel()
+  it 'transactions received out of order should be applied in order', ->
+    [model, sockets] = mockSocketModel()
     sockets.emit 'txn', transaction.create(base: 1, id: '_.0', method: 'set', args: ['color', 'green']), 1
     model.get('color').should.eql 'green'
     
@@ -111,16 +101,20 @@ module.exports =
     model.get('number').should.eql 7
     sockets._disconnect()
   
-  'duplicate transaction versions should not be applied': ->
-    [sockets, model] = mockSocketModel()
+  it 'duplicate transaction versions should not be applied', ->
+    [model, sockets] = mockSocketModel()
     sockets.emit 'txn', transaction.create(base: 1, id: '_.0', method: 'push', args: ['colors', 'green']), 1
     sockets.emit 'txn', transaction.create(base: 1, id: '_.0', method: 'push', args: ['colors', 'green']), 2
     model.get('colors').should.specEql ['green']
     sockets._disconnect()
   
-  'transactions should be requested if pending longer than timeout': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0', 'txnsSince', (txnsSince) ->
-      txnsSince.should.eql 3
+  it 'transactions should be requested if pending longer than timeout @slow', (done) ->
+    ignoreFirst = true
+    [model, sockets] = mockSocketModel '0', 'txnsSince', (ver) ->
+      # A txnsSince request is sent immediately upon connecting,
+      # so the first one should be ignored
+      return ignoreFirst = false  if ignoreFirst
+      ver.should.eql 3
       sockets._disconnect()
       done()
     sockets.emit 'txn', transaction.create(base: 1, id: '1.1', method: 'set', args: ['color', 'green']), 1
@@ -128,30 +122,35 @@ module.exports =
     sockets.emit 'txn', transaction.create(base: 4, id: '1.4', method: 'set', args: ['color', 'green']), 4
     sockets.emit 'txn', transaction.create(base: 5, id: '1.5', method: 'set', args: ['color', 'green']), 5
 
-  'transactions should not be requested if pending less than timeout': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0', 'txnsSince', done
+  it 'transactions should not be requested if pending less than timeout', calls 0, (done) ->
+    ignoreFirst = true
+    [model, sockets] = mockSocketModel '0', 'txnsSince', (ver) ->
+      # A txnsSince request is sent immediately upon connecting,
+      # so the first one should be ignored
+      return ignoreFirst = false  if ignoreFirst
+      done()
     sockets.emit 'txn', transaction.create(base: 1, id: '1.1', method: 'set', args: ['color', 'green']), 1
     sockets.emit 'txn', transaction.create(base: 3, id: '1.3', method: 'set', args: ['color', 'green']), 3
     sockets.emit 'txn', transaction.create(base: 2, id: '1.2', method: 'set', args: ['color', 'green']), 2
-    setTimeout sockets._disconnect, 100
-  , 0
+    setTimeout sockets._disconnect, 50
   
-  'sub event should be sent on socket.io connect': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0', 'sub', (clientId, storeSubs, ver) ->
+  it 'sub event should be sent on socket.io connect', (done) ->
+    [model, sockets] = mockSocketModel '0', 'sub', (clientId, storeSubs, ver) ->
       clientId.should.eql '0'
       storeSubs.should.eql []
       ver.should.eql 0
       sockets._disconnect()
       done()
   
-  'test speculative value of set': ->
+  it 'test speculative value of set', ->
     model = new Model '0'
     
-    out = model.set 'color', 'green'
-    out.should.eql 'green'
+    previous = model.set 'color', 'green'
+    should.equal undefined, previous
     model.get('color').should.eql 'green'
     
-    model.set 'color', 'red'
+    previous = model.set 'color', 'red'
+    previous.should.equal 'green'
     model.get('color').should.eql 'red'
     
     model.set 'info.numbers', first: 2, second: 10
@@ -189,7 +188,7 @@ module.exports =
     model.set 'obj.a', 'b'
     model._adapter._data.should.specEql world: {obj: {}}
 
-  'test speculative value of del': ->
+  it 'test speculative value of del', ->
     model = new Model '0'
     model._adapter._data =
       world:
@@ -199,8 +198,8 @@ module.exports =
             first: 2
             second: 10
   
-    out = model.del 'color'
-    out.should.eql 'green'
+    previous = model.del 'color'
+    previous.should.eql 'green'
     model.get().should.specEql
       info:
         numbers:
@@ -260,7 +259,7 @@ module.exports =
       txn
     ).should.eql expected
 
-  'test speculative incr': ->
+  it 'test speculative incr', ->
     model = new Model
     
     # Should be able to increment unset path
@@ -283,16 +282,16 @@ module.exports =
     model.get('count').should.eql 0
     val.should.eql 0
 
-  'test speculative push': ->
+  it 'test speculative push', ->
     model = new Model
     
     model.push 'colors', 'green'
     model.get('colors').should.specEql ['green']
     model._adapter._data.should.specEql world: {}
 
-  'model events should get emitted properly': wrapTest (done) ->
+  it 'model events should get emitted properly', (done) ->
     ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
+    [model, sockets] = mockSocketModel '0', 'txn', (txn) ->
       transaction.base txn, ++ver
       sockets.emit 'txn', txn, ver
     count = 0
@@ -310,46 +309,62 @@ module.exports =
       sockets._disconnect()
       done()
     model.set 'color', 'green'
-  , 1
 
-  'model events should indicate when locally emitted': wrapTest (done) ->
+  it 'model events should indicate when locally emitted', (done) ->
     model = new Model
-    model.on 'set', ([path, value], local) ->
+    model.on 'set', '*', (path, value, previous, local) ->
       path.should.eql 'color'
       value.should.eql 'green'
+      should.equal undefined, previous
       local.should.eql true
       done()
     model.set 'color', 'green'
-  , 1
 
-  'model events should indicate when not locally emitted': wrapTest (done) ->
-    [sockets, model] = mockSocketModel '0'
-    model.on 'set', ([path, value], local) ->
+  it 'model events should indicate when not locally emitted', (done) ->
+    [model, sockets] = mockSocketModel '0'
+    model.on 'set', '*', (path, value, previous, local) ->
       path.should.eql 'color'
       value.should.eql 'green'
+      should.equal undefined, previous
       local.should.eql false
       sockets._disconnect()
       done()
     sockets.emit 'txn', transaction.create(base: 1, id: '1.1', method: 'set', args: ['color', 'green']), 1
-  , 1
 
-  'model.once should only emit once': wrapTest (done) ->
+  it 'model.once should only emit once', (done) ->
     model = new Model
-    model.once 'set', 'color', done
+    model.once 'set', 'color', -> done()
     model.set 'color', 'green'
     model.set 'color', 'red'
-  , 1
 
-  'model.once should only emit once per path': wrapTest (done) ->
+  it 'model.once should only emit once per path', (done) ->
     model = new Model
-    model.once 'set', 'color', done
+    model.once 'set', 'color', -> done()
     model.set 'other', 3
     model.set 'color', 'green'
     model.set 'color', 'red'
-  , 1
 
-  'test client emits events on receipt of a transaction iff it did not create the transaction': wrapTest (done) ->
-    [sockets, model] = mockSocketModel('clientA')
+  it 'model.pass should pass an object to an event listener', (done) ->
+    model = new Model
+    model.on 'set', 'color', (value, previous, isLocal, pass) ->
+      value.should.equal 'green'
+      should.equal undefined, previous
+      isLocal.should.equal true
+      pass.should.equal 'hi'
+      done()
+    model.pass('hi').set 'color', 'green'
+
+  it 'model.pass should support setting', ->
+    model = new Model
+    model.pass('hi').set 'color', 'green'
+    model.get('color').should.eql 'green'
+    model.set 'color2', 'red'
+    model.get().should.specEql
+      color: 'green'
+      color2: 'red'
+
+  it 'test client emits events on receipt of a transaction iff it did not create the transaction', (done) ->
+    [model, sockets] = mockSocketModel('clientA')
     eventCalled = false
     model.on 'set', 'color', (val) ->
       eventCalled = true
@@ -362,10 +377,9 @@ module.exports =
       eventCalled.should.be.false
       sockets._disconnect()
       done()
-    , 200
-  , 1
+    , 50
   
-  'forcing a model method should create a transaction with a null version': ->
+  it 'forcing a model method should create a transaction with a null version', ->
     model = new Model '0'
     model.set 'color', 'green'
     model.force.set 'color', 'red'
@@ -374,16 +388,16 @@ module.exports =
     model._txns['0.1'].slice().should.eql transaction.create base: null, id: '0.1', method: 'set', args: ['color', 'red']
     model._txns['0.2'].slice().should.eql transaction.create base: null, id: '0.2', method: 'del', args: ['color']
 
-  'a forced model mutation should not result in an adapter ver of null or undefined': ->
+  it 'a forced model mutation should not result in an adapter ver of null or undefined', ->
     model = new Model '0'
     model.set 'color', 'green'
     model.force.set 'color', 'red'
-    model._adapter.version().should.not.be.null
-    model._adapter.version().should.not.be.undefined
+    model._adapter.version.should.not.be.null
+    model._adapter.version.should.not.be.undefined
   
-  'model mutator methods should callback on completion': wrapTest (done) ->
+  it 'model mutator methods should callback on completion', calls 2, (done) ->
     ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
+    [model, sockets] = mockSocketModel '0', 'txn', (txn) ->
       transaction.base txn, ++ver
       sockets.emit 'txn', txn
       sockets._disconnect()
@@ -396,11 +410,10 @@ module.exports =
       should.equal null, err
       path.should.equal 'color'
       done()
-  , 2
   
-  'model mutator methods should callback with error on confict': wrapTest (done) ->
+  it 'model mutator methods should callback with error on confict', calls 2, (done) ->
     ver = 0
-    [sockets, model] = mockSocketModel '0', 'txn', (txn) ->
+    [model, sockets] = mockSocketModel '0', 'txn', (txn) ->
       sockets.emit 'txnErr', 'conflict', transaction.id txn
       sockets._disconnect()
     model.set 'color', 'green', (err, path, value) ->
@@ -412,9 +425,8 @@ module.exports =
       err.should.equal 'conflict'
       path.should.equal 'color'
       done()
-  , 2
 
-  'model push should instantiate an undefined path to a new array and insert new members at the end': ->
+  it 'model push should instantiate an undefined path to a new array and insert new members at the end', ->
     model = new Model '0'
     init = model.get 'colors'
     should.equal undefined, init
@@ -423,7 +435,7 @@ module.exports =
     final = model.get 'colors'
     final.should.specEql ['green']
 
-  'model pop should remove a member from an array': ->
+  it 'model pop should remove a member from an array', ->
     model = new Model '0'
     init = model.get 'colors'
     should.equal undefined, init
@@ -435,7 +447,7 @@ module.exports =
     final = model.get 'colors'
     final.should.specEql []
 
-  'model unshift should instantiate an undefined path to a new array and insert new members at the beginning': ->
+  it 'model unshift should instantiate an undefined path to a new array and insert new members at the beginning', ->
     model = new Model '0'
     init = model.get 'colors'
     should.equal undefined, init
@@ -448,7 +460,7 @@ module.exports =
     final = model.get 'colors'
     final.should.specEql ['red', 'orange', 'green']
 
-  'model shift should remove the first member from an array': ->
+  it 'model shift should remove the first member from an array', ->
     model = new Model '0'
     init = model.get 'colors'
     should.equal undefined, init
@@ -461,55 +473,35 @@ module.exports =
     final = model.get 'colors'
     final.should.specEql ['blue']
 
-  'model insertAfter should work on an array, with a valid index': ->
+  it 'insert should work on an array, with a valid index', ->
     model = new Model '0'
-    init = model.get 'colors'
-    should.equal undefined, init
     model.push 'colors', 'green'
-    interim = model.get 'colors'
-    interim.should.specEql ['green']
-    out = model.insertAfter 'colors', 0, 'red'
-    out.should.eql 2
-    final = model.get 'colors'
-    final.should.specEql ['green', 'red']
-
-  'model insertBefore should work on an array, with a valid index': ->
+    out = model.insert 'colors', 0, 'red', 'yellow'
+    out.should.eql 3
+    model.get('colors').should.specEql ['red', 'yellow', 'green']
+  
+  it 'insert should work on an array index path', ->
     model = new Model '0'
-    init = model.get 'colors'
-    should.equal undefined, init
     model.push 'colors', 'green'
-    interim = model.get 'colors'
-    interim.should.specEql ['green']
-    out = model.insertBefore 'colors', 0, 'red'
-    out.should.eql 2
-    final = model.get 'colors'
-    final.should.specEql ['red', 'green']
+    out = model.insert 'colors.0', 'red', 'yellow'
+    out.should.eql 3
+    model.get('colors').should.specEql ['red', 'yellow', 'green']
 
-  'model remove should work on an array, with a valid index': ->
+  it 'remove should work on an array, with a valid index', ->
     model = new Model '0'
-    init = model.get 'colors'
-    should.equal undefined, init
     model.push 'colors', 'red', 'orange', 'yellow', 'green', 'blue', 'violet'
-    interim = model.get 'colors'
-    interim.should.specEql ['red', 'orange', 'yellow', 'green', 'blue', 'violet']
     out = model.remove 'colors', 1, 4
-    out.should.eql ['orange', 'yellow', 'green', 'blue']
-    final = model.get 'colors'
-    final.should.specEql ['red', 'violet']
-
-  'model splice should work on an array, just like JS Array::splice': ->
+    out.should.specEql ['orange', 'yellow', 'green', 'blue']
+    model.get('colors').should.specEql ['red', 'violet']
+  
+  it 'remove should work on an array index path', ->
     model = new Model '0'
-    init = model.get 'colors'
-    should.equal undefined, init
     model.push 'colors', 'red', 'orange', 'yellow', 'green', 'blue', 'violet'
-    interim = model.get 'colors'
-    interim.should.specEql ['red', 'orange', 'yellow', 'green', 'blue', 'violet']
-    out = model.splice 'colors', 1, 4, 'oak'
-    out.should.eql ['orange', 'yellow', 'green', 'blue']
-    final = model.get 'colors'
-    final.should.specEql ['red', 'oak', 'violet']
+    out = model.remove 'colors.1', 4
+    out.should.specEql ['orange', 'yellow', 'green', 'blue']
+    model.get('colors').should.specEql ['red', 'violet']
 
-  'model move should work on an array, with a valid index': ->
+  it 'move should work on an array, with a valid index', ->
     model = new Model '0'
     model.push 'colors', 'red', 'orange', 'yellow', 'green'
     out = model.move 'colors', 1, 2
@@ -521,3 +513,31 @@ module.exports =
     out = model.move 'colors', 0, 0
     out.should.eql 'yellow'
     model.get('colors').should.specEql ['yellow', 'orange', 'green', 'red']
+  
+  it 'move should work on an array index path', ->
+    model = new Model '0'
+    model.push 'colors', 'red', 'orange', 'yellow', 'green'
+    out = model.move 'colors.1', 2
+    out.should.eql 'orange'
+    model.get('colors').should.specEql ['red', 'yellow', 'orange', 'green']
+    out = model.move 'colors.0', 3
+    out.should.eql 'red'
+    model.get('colors').should.specEql ['yellow', 'orange', 'green', 'red']
+    out = model.move 'colors.0', 0
+    out.should.eql 'yellow'
+    model.get('colors').should.specEql ['yellow', 'orange', 'green', 'red']
+
+  it 'supports an id method for creating a guid', ->
+    model = new Model '0'
+    id00 = model.id()
+    id01 = model.id()
+
+    model = new Model '1'
+    id10 = model.id()
+
+    id00.should.be.a 'string'
+    id01.should.be.a 'string'
+    id10.should.be.a 'string'
+
+    id00.should.not.eql id01
+    id00.should.not.eql id10

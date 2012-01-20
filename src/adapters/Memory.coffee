@@ -4,28 +4,43 @@
 ##  Do not edit it directly.
 
 MemorySync = require './MemorySync'
+MUTATORS = ['set', 'del', 'push', 'unshift', 'insert', 'pop', 'shift', 'remove', 'move']
 
 Memory = module.exports = ->
   @_data = world: {}
-  @_vers = ver: 0
+  @version = 0
   return
 
 Memory:: =
   flush: (callback) ->
     @_data = world: {}
-    @_vers = ver: 0
+    @version = 0
     callback null
 
-  _get: MemorySync::getWithVersion
+  setVersion: MemorySync::setVersion
+
+  _get: MemorySync::get
   get: (path, callback) ->
     try
-      [val, ver] = @_get path
+      val = @_get path
     catch err
       return callback err
-    callback null, val, ver
+    callback null, val, @version
 
-['set', 'del', 'push', 'unshift', 'splice', 'pop', 'shift', 'insertAfter',
-'insertBefore', 'remove', 'move'].forEach (method) ->
+  setupDefaultPersistenceRoutes: (store) ->
+    adapter = @
+    for method in MUTATORS
+      store.defaultRoute method, '*', do (method) ->
+        ->
+          [pathPlusArgsPlusDone..., next] = arguments
+          adapter[method] pathPlusArgsPlusDone...
+    store.defaultRoute 'get', '*', (path, done, next) ->
+      adapter.get path, done
+    store.defaultRoute 'get', '', (path, done, next) ->
+      adapter.get '', done
+    return
+
+MUTATORS.forEach (method) ->
   alias = '_' + method
   Memory::[alias] = fn = MemorySync::[method]
   Memory::[method] = switch fn.length
@@ -53,4 +68,3 @@ Memory:: =
       catch err
         return callback err
       callback null, args...
-

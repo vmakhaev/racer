@@ -1,91 +1,117 @@
 MemorySync = require './adapters/MemorySync'
 pathParser = require './pathParser'
 {EventEmitter} = require 'events'
-{mergeAll: merge} = require './util'
+{mergeAll} = require './util'
 
-Model = module.exports = (@_clientId = '', AdapterClass = MemorySync) ->
-  self = this
-  self._adapter = adapter = new AdapterClass
+Model = module.exports = (@_clientId = '', Adapter = MemorySync) ->
+  @_root = this
+  @_adapter = new Adapter
 
   for {init} in Model.mixins
-    init.call self if init
-
-  # The value of @_silent is checked in @_addOpAsTxn. It can be used to perform an
-  # operation without triggering an event locally, such as model.silent.set
-  # It only silences the first local event, so events on public paths that
-  # get synced to the server are still emitted
-  self.silent = Object.create self, _silent: value: true
+    init.call this if init
 
   return
 
+Model:: =
 
-## Socket.io communication ##
+  ## Socket.io communication ##
 
-Model::connected = true
-Model::canConnect = true
+  connected: true
+  canConnect: true
 
-Model::_setSocket = (socket) ->
-  self = this
-  self.socket = socket
+  _setSocket: (@socket) ->
+    self = this
 
-  self.canConnect = true
-  socket.on 'fatalErr', ->
-    self.canConnect = false
-    self.emit 'canConnect', false
-    socket.disconnect()
+    self.canConnect = true
+    socket.on 'fatalErr', ->
+      self.canConnect = false
+      self.emit 'canConnect', false
+      socket.disconnect()
 
-  self.connected = false
-  onConnected = ->
-    self.emit 'connected', self.connected
-    self.emit 'connectionStatus', self.connected, self.canConnect
-
-  socket.on 'connect', ->
-    self.connected = true
-    onConnected()
-
-  socket.on 'disconnect', ->
     self.connected = false
-    # Slight delay after disconnect so that offline doesn't flash on reload
-    setTimeout onConnected, 200
-  # Needed in case page is loaded from cache while offline
-  socket.on 'connect_failed', onConnected
+    onConnected = ->
+      self.emit 'connected', self.connected
+      self.emit 'connectionStatus', self.connected, self.canConnect
 
-  for {setupSocket} in Model.mixins
-    setupSocket.call @, socket if setupSocket
+    socket.on 'connect', ->
+      self.connected = true
+      onConnected()
+
+    socket.on 'disconnect', ->
+      self.connected = false
+      # Slight delay after disconnect so that offline doesn't flash on reload
+      setTimeout onConnected, 200
+    # Needed in case page is loaded from cache while offline
+    socket.on 'connect_failed', onConnected
+
+    for {setupSocket} in Model.mixins
+      setupSocket.call @, socket if setupSocket
+
+
+  # Create a model object scoped to a particular path
+  at: (segment, absolute) -> Object.create this, _at: value:
+    if (at = @_at) && !absolute
+      if segment == '' then at else at + '.' + segment
+    else segment.toString()
+
+  parent: (levels = 1) ->
+    return this unless at = @_at
+    segments = at.split '.'
+    return @at segments.slice(0, segments.length - levels).join('.'), true
+
+  path: -> @_at || ''
+
+  leaf: (path) ->
+    path = @_at || '' unless path?
+    i = path.lastIndexOf '.'
+    return path.substr i + 1
+
+  # Used to pass an additional argument to local events. This value is
+  # added to the event arguments in mixin.stm
+  # Example: model.pass(ignore: domId).move 'arr', 0, 2
+  pass: (arg) -> Object.create this, _pass: value: arg
 
 
 ## Model events ##
 
-# Used to pass an additional argument to local events. This value is
-# added to the event arguments in mixin.stm
-# Example: model.with(ignore: domId).move 'arr', 0, 2
-Model::with = (options) -> Object.create this, _with: value: options
+eventListener = (method, pattern, callback, at) ->
+  if at
+    if typeof pattern is 'string'
+      pattern = at + '.' + pattern
+    else if pattern.call
+      callback = pattern
+      pattern = at
+    else
+      throw new Error 'Unsupported event pattern on model alias'
 
-merge Model::, EventEmitter::,
-  _eventListener: (method, pattern, callback) ->
+  else
     # on(type, listener)
     # Test for function by looking for call, since pattern can be a regex,
     # which has a typeof == 'function' as well
     return pattern if pattern.call
-    
-    # on(method, pattern, callback)
-    re = pathParser.eventRegExp pattern
-    return ([path, args...], isLocal, _with) ->
-      if re.test path
-        callback re.exec(path).slice(1).concat(args, isLocal, _with)...
-        return true
 
+  # on(method, pattern, callback)
+  re = pathParser.eventRegExp pattern
+  return (args, out, isLocal, pass) ->
+    path = args[0]
+    if re.test path
+      emitArgs = re.exec(path).slice(1).concat args.slice(1)
+      emitArgs.push out, isLocal, pass
+      callback emitArgs...
+      return true
+
+mergeAll Model::, EventEmitter::,
   # EventEmitter::on/addListener and once return this. The Model equivalents
   # return the listener instead, since it is made internally for method
   # subscriptions and may need to be passed to removeListener
 
   _on: EventEmitter::on
   on: (type, pattern, callback) ->
-    @_on type, listener = @_eventListener type, pattern, callback
+    @_on type, listener = eventListener type, pattern, callback, @_at
     return listener
 
   once: (type, pattern, callback) ->
-    listener = @_eventListener type, pattern, callback
+    listener = eventListener type, pattern, callback, @_at
     self = this
     @_on type, g = ->
       matches = listener arguments...
@@ -93,6 +119,7 @@ merge Model::, EventEmitter::,
     return listener
 
 Model::addListener = Model::on
+
 
 ## Mixins ##
 
@@ -112,8 +139,7 @@ Model.mutators = {}
 onMixins = []
 Model.mixin = (mixin) ->
   Model.mixins.push mixin
-  merge Model::, proto if proto = mixin.proto
-  merge Model, static if static = mixin.static
+  mergeAll Model::, mixin.static, mixin.proto
 
   for category in ['accessors', 'mutators']
     cache = Model[category]

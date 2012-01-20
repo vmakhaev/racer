@@ -1,360 +1,300 @@
-{identifier: specIdentifier} = require '../specHelper'
-{hasKeys} = require '../util'
+{mergeAll, hasKeys, isServer} = require '../util'
+{eventRegExp, isPrivate} = require '../pathParser'
 
 mutators = {}
+basicMutators = {}
 arrayMutators = {}
 
 module.exports =
 
-  init: ->
-    @_refHelper = new RefHelper this
-
-  proto:
-    ref: (ref, key) ->
-      if key? then $r: ref, $k: key else $r: ref
-
-    arrayRef: (ref, key) ->
-      $r: ref, $k: key, $t: 'array'
-
-    _dereference: (path, data) ->
-      @_adapter.get path, data ||= @_specModel()
-      if data.$remainder then data.$path + '.' + data.$remainder else data.$path
-
   onMixin: (_mutators) ->
     mutators = _mutators
     for mutator, fn of _mutators
-      arrayMutators[mutator] = fn  if fn.type is 'array'
+      switch fn.type
+        when 'basic' then basicMutators[mutator] = fn
+        when 'array' then arrayMutators[mutator] = fn
+    return
 
-# TODO: Make arrayRefs return the proper values from mutations
+  init: ->
+    model = @_root
 
-RefHelper = (model) ->
-  @_model = model
-  @_adapter = adapter = model._adapter
-  refHelper = this
+    for mutator of mutators
+      do (mutator) ->
+        model.on mutator, ([path]) ->
+          model.emit 'mutator', mutator, path, arguments
 
-  model.on 'beforeTxn', (method, args) ->
-    return unless (path = args[0])?
-    data = model._specModel()
+    @on 'beforeTxn', (method, args) ->
+      return unless path = args[0]
 
-    # Transform args if mutating an array ref
-    if arrayMutators[method] && (refObj = adapter.getRef path, data) &&
-        refObj.$t is 'array'
-      {$r, $k} = refObj
-      $k = model._dereference $k, data
+      obj = @_adapter.get path, data = @_specModel()
+      if fn = data.$deref
+        args[0] = fn method, args, model, obj
+      return
 
-      # Handle index args if they are specified by id
-      if indexArgs = arrayMutators[method].indexArgs
-        ids = {}
-        keyObj = adapter.get $k, data
-        for i in indexArgs
-          continue unless (id = args[i]?.id)?
-          # Store the id index in the txn metadata
-          ids[i] = id
-          # Few operations have multiple indexArgs, so OK to do this in the loop
-          args.meta = {ids}
-          # Replace id arg with the current index for the given id
-          for keyId, index in keyObj
-            if `keyId == id`
-              args[i] = index
-              break
+  proto:
+    dereference: (path) ->
+      @_adapter.get path, data = @_specModel()
+      return derefPath data, path
 
-      # TODO Add test to make sure that we assign the de-referenced $k to path
-      args[0] = path = $k
-      if i = mutators[method].insertArgs
-        while arg = args[i]
-          # TODO: Allow a name other than 'id' for the key id property?
-          if id = arg.id
-            # Set the object being inserted if it contains any properties
-            # other than id
-            model.set $r + '.' + id, arg  if hasKeys arg, 'id'
-            args[i] = id
-          else
-            # TODO: Support inserting values without specifying an id?
-            throw Error 'arrayRef mutators require an id'
-          i++
+    ref: (from, to, key) ->
+      return @_createRef Ref, from, to, key
 
-    else
-      # Update the transaction's path with a dereferenced path.
-      args[0] = model._dereference path, data
-    
-  for method of mutators
-    do (method) ->
-      model.on method, (args, isLocal, _with, meta) ->
-        # Emit events on any references that point to the path or
-        # any of its ancestor paths
-        refHelper.notifyPointersTo method, args, isLocal, _with, meta
+    refList: (from, to, key) ->
+      return @_createRef RefList, from, to, key
 
-  # TODO: Similar deep traversal on array mutators that push objects
-  eachNode = (path, value, callback) ->
-    callback path, value
-    for prop, val of value
-      nodePath = "#{path}.#{prop}"
-      if Object == val?.constructor
-        eachNode nodePath, val, callback
-      else
-        callback nodePath, val
+    fn: (inputs..., callback) ->
+      path = if @_at then @_at else inputs.shift()
+      model = @_root
+      model._checkRefPath path, 'fn'
+      if typeof callback is 'string'
+        callback = do new Function 'return ' + callback
+      return createFn model, path, inputs, callback
 
-  model.on 'setPre', ([path, value], ver, data) ->
-    eachNode path, value, (path, value) ->
-      if value && value.$r
-        refHelper.$indexRefs path, value.$r, value.$k, value.$t, ver, data
-  
-  model.on 'setPost', ([path, value], ver, data) ->
-    eachNode path, value, (path, value) ->
-      refHelper.updateRefsForKey path, ver, data
+    _checkRefPath: (from, type) ->
+      @_adapter.get from, data = @_specModel(), true
+      unless isPrivate derefPath data, from
+        throw new Error "cannot create #{type} on public path #{from}"
+      return
 
-  model.on 'delPost', ([path], ver, data) ->
-    if refHelper.isPathPointedTo path, data
-      refHelper.cleanupPointersTo path, ver, data
+    _createRef: (RefType, from, to, key) ->
+      if @_at
+        key = to
+        to = from
+        from = @_at
+      model = @_root
+      model._checkRefPath from, 'ref'
+      {get} = new RefType model, from, to, key
+      @set from, get
+      return get
 
-  for method of arrayMutators
-    model.on method + 'Post', (args, ver, data, meta) ->
-      path = args[0]
-      data ||= model._specModel()
-      if (refObj = adapter.getRef path, data) && refObj.$t is 'array'
-        # If arrayRef, convert array ref index api back to id api
-        # before emitting events
-        indiciesToIds args, meta
-      refHelper.updateRefsForKey path, ver, data
+    _getRef: (path) -> @_adapter.get path, @_specModel(), true
+
+
+  createFn: createFn = (model, path, inputs, callback, destroy) ->
+    modelPassFn = model.pass('fn')
+    run = ->
+      value = callback (model.get input for input, i in inputs)...
+      modelPassFn.set path, value
+      return value
+    out = run()
+
+    # Create regular expression matching the path or any of its parents
+    p = ''
+    source = (for segment, i in path.split '.'
+      "(?:#{p += if i then '\\.' + segment else segment})"
+    ).join '|'
+    reSelf = new RegExp '^' + source + '$'
+
+    # Create regular expression matching any of the inputs or
+    # child paths of any of the inputs
+    source = ("(?:#{input}(?:\\..+)?)" for input in inputs).join '|'
+    reInput = new RegExp '^' + source + '$'
+
+    listener = model.on 'mutator', (mutator, mutatorPath, _arguments) ->
+      return if _arguments[3] == 'fn'
+
+      if reSelf.test(mutatorPath) && (test = model.get path) != out && (
+        # Don't remove if both test and out are NaN
+        test == test || out == out
+      )
+        model.removeListener 'mutator', listener
+        destroy() if destroy
+      else if reInput.test mutatorPath
+        out = run()
+      return
+
+    return out
+
+require './server' if isServer
+
+
+lookupPath = (path, props, i) ->
+  arr = props.slice i
+  arr.unshift path
+  return arr.join '.'
+
+derefPath = (data, to) ->
+  data.$deref?() || to
+
+Ref = (@model, @from, to, key) ->
+  @listeners = []
+
+  unless from && to
+    throw new Error 'invalid arguments for model.ref'
+
+  if key
+    @get = (lookup, data, path, props, len, i) ->
+      lookup to, data
+      dereffed = derefPath data, to
+      keyPath = lookup key, data
+      currPath = lookupPath dereffed + '.' + keyPath, props, i
+      curr = lookup currPath, data
+
+      data.$deref = (method) ->
+        if i == len && method of basicMutators then path else currPath
+      return [curr, currPath, i]
+
+    @addListener "#{to}.*", (match) ->
+      keyPath = model.get(key).toString()
+      remainder = match[1]
+      return from if remainder == keyPath
+      # Test to see if the remainder starts with the keyPath
+      index = keyPath.length + 1
+      if remainder.substr(0, index) == keyPath + '.'
+        remainder = remainder.substr index
+        return from + '.' + remainder
+      # Don't emit another event if the keyPath is not matched
+      return null
+
+  else
+    @get = (lookup, data, path, props, len, i) ->
+      curr = lookup to, data
+      dereffed = derefPath data, to
+      currPath = lookupPath dereffed, props, i
+
+      data.$deref = (method) ->
+        if i == len && method of basicMutators then path else currPath
+      return [curr, currPath, i]
+
+    @addListener "#{to}.*", (match) -> from + '.' + match[1]
+    @addListener to, -> from
 
   return
 
+Ref:: =
 
-# TODO: Rewrite all of this ref indexing code. It's pretty scary right now.
+  addListener: (pattern, callback) ->
+    {model, from, get} = self = this
+    re = eventRegExp pattern
+    self.listeners.push listener = (mutator, path, _arguments) ->
+      if re.test path
+        return self.destroy() if model._getRef(from) != get
+        args = _arguments[0].slice()
+        path = callback re.exec(path), mutator, args
+        return if path is null
+        args[0] = path
+        model.emit mutator, args, _arguments[1], _arguments[2], _arguments[3]
+      return
+    model.on 'mutator', listener
 
-# RefHelper contains code that manages an index of refs: the pointer path,
-# ref path, key path, and ref type. It uses this index to
-# 1. Manage ref dependencies on an adapter update
-# 2. Ultimately raise events at the model layer for refs related to a
-#    mutated path.
-RefHelper:: =
-
-  isPathPointedTo: (path, data) ->
-    found = @_adapter.get "$refs.#{path}.$", data
-    return found isnt undefined
-
-  ## Pointer Builders ##
+  destroy: ->
+    model = @model
+    for listener in @listeners
+      model.removeListener 'mutator', listener
   
-  # If a key is present, merges
-  #     TODO key is redundant here
-  #     { <path>: [<ref>, <key>, <type>] }
-  # into
-  #     "$keys":
-  #       "#{key}":
-  #         $:
-  #
-  # and merges
-  #     { <path>: [<ref>, <key>, <type>] }
-  # into
-  #     $refs:
-  #       <ref>.<lookup(key)>: 
-  #         $:
-  #
-  # If key is not present, merges
-  #     <path>: [<ref>, undefined]
-  # into
-  #     $refs:
-  #       <ref>: 
-  #         $:
-  #
-  # $refs is a kind of index that allows us to lookup
-  # which references pointed to the path, `ref`, or to
-  # a path that `ref` is a descendant of.
-  #
-  # [*] The only purpose of these data structures appears to be for
-  # mutator events also emitting to references that pointed at the original
-  # mutated path
-  #
-  # @param {String} path that is de-referenced to a true path represented by
-  #                 lookup(ref + '.' + lookup(key))
-  # @param {String} ref is what would be the `value` of $r: `value`.
-  #                 It's what we are pointing to
-  # @param {String} key is a path that points to a pathB or array of paths
-  #                 as another lookup chain on the dereferenced `ref`
-  # @param {String} type can be undefined or 'array'
-  # @param {Number} ver
-  $indexRefs: (path, ref, key, type, ver, data) ->
-    adapter = @_adapter
-    oldRefObj = adapter.getRef path, data
-    if key
-      entry = [ref, key]
-      entry.push type if type
-      adapter.getAddPath("$keys.#{key}.$", data, ver, 'object')[path] = entry
-      keyVal = adapter.get key, data
-      # keyVal is only valid if it can be a valid path segment
-      return if type is undefined and keyVal is undefined
-      if type == 'array'
-        keyVal = adapter.getAddPath key, data, ver, 'array'
-        @_removeOld$refs oldRefObj, path, ver, data
-        for i in keyVal
-          refsKey = ref + '.' + i
-          @_update$refs refsKey, path, ref, key, type, ver, data
-        return
-      refsKey = ref + '.' + keyVal
+  modelMethod: 'ref'
+
+
+RefList = (@model, @from, to, key) ->
+  @listeners = []
+
+  unless from && to && key
+    throw new Error 'invalid arguments for model.refList'
+
+  @get = (lookup, data, path, props, len, i) ->
+    obj = lookup(to, data) || {}
+    dereffed = derefPath data, to
+    data.$deref = null
+    map = lookup key, data
+    dereffedKey = derefPath data, key
+    if i == len
+      # Method is on the refList itself
+      currPath = lookupPath dereffed, props, i
+
+      data.$deref = (method, args, model) ->
+        return path if method of basicMutators
+
+        if arrayMutator = arrayMutators[method]
+          # Handle index args if they are specified by id
+          if indexArgs = arrayMutator.indexArgs
+            for j in indexArgs
+              continue unless (arg = args[j]) && (id = arg.id)?
+              # Replace id arg with the current index for the given id
+              for keyId, index in map
+                if `keyId == id`
+                  args[j] = index
+                  break
+
+          if j = arrayMutator.insertArgs
+            while arg = args[j]
+              id = arg.id = model.id()  unless (id = arg.id)?
+              # Set the object being inserted if it contains any properties
+              # other than id
+              model.set dereffed + '.' + id, arg  if hasKeys arg, 'id'
+              args[j] = id
+              j++
+          return dereffedKey
+
+        throw new Error method + ' unsupported on refList'
+
+      if map
+        curr = (obj[prop] for prop in map)
+        return [curr, currPath, i]
+      
+      return [undefined, currPath, i]
+
     else
-      if oldRefObj && oldKey = oldRefObj.$k
-        refs = adapter.get "$keys.#{oldKey}.$", data
-        if refs && refs[path]
-          delete refs[path]
-          adapter.del "$keys.#{oldKey}", ver, data unless hasKeys refs, specIdentifier
-      refsKey = ref
-    @_removeOld$refs oldRefObj, path, ver, data
-    @_update$refs refsKey, path, ref, key, type, ver, data
+      index = props[i++]
 
-  # Private helper function for $indexRefs
-  _removeOld$refs: (oldRefObj, path, ver, data) ->
-    if oldRefObj && oldRef = oldRefObj.$r
-      if oldKey = oldRefObj.$k
-        oldKeyVal = @_adapter.get oldKey, data
-      if oldKey && (oldRefObj.$t == 'array')
-        # If this key was used in an array ref: {$r: path, $k: [...]}
-        for oldKeyMem in oldKeyVal
-          @_removeFrom$refs oldRef, oldKeyMem, path, ver, data
-        @_removeFrom$refs oldRef, undefined, path, ver, data
+      if map && (prop = map[index])?
+        curr = obj[prop]
+
+      if i == len
+        # Method is on an index of the refList
+        currPath = lookupPath dereffed, props, i
+
+        data.$deref = (method, args, model, obj) ->
+          # TODO: Additional model methods should be done atomically
+          # with the original txn instead of making an additional txn
+
+          if method is 'set'
+            value = args[1]
+            id = value.id = model.id()  unless (id = value.id)?
+            if map
+              model.set dereffedKey + '.' + index, id
+            else
+              model.set dereffedKey, [id]
+            return currPath + '.' + id
+
+          if method is 'del'
+            unless (id = obj.id)?
+              throw new Error 'Cannot delete refList item without id'
+            model.del dereffedKey + '.' + index
+            return currPath + '.' + id
+
+          throw new Error method + ' unsupported on refList index'
+
       else
-        @_removeFrom$refs oldRef, oldKeyVal, path, ver, data
+        # Method is on a child of the refList
+        currPath = lookupPath dereffed + '.' + prop, props, i
 
-  # Private helper function for $indexRefs
-  _removeFrom$refs: (ref, key, path, ver, data) ->
-    refWithKey = ref + '.' + key if key
-    refEntries = @_adapter.get "$refs.#{refWithKey}.$", data
-    return unless refEntries
-    delete refEntries[path]
-    unless hasKeys refEntries, specIdentifier
-      @_adapter.del "$refs.#{ref}", ver, data
-    
-  # Private helper function for $indexRefs
-  _update$refs: (refsKey, path, ref, key, type, ver, data) ->
-    entry = [ref, key]
-    entry.push type if type
-    # TODO DRY - Above 2 lines are duplicated below
-    @_adapter.getAddPath("$refs.#{refsKey}.$", data, ver, 'object')[path] = entry
+        data.$deref = (method) ->
+          if method && `prop == null`
+            throw new Error method + ' on undefined refList child ' + props.join('.')
+          currPath
 
-  # If path is a reference's key ($k), then update all entries in the
-  # $refs index that use this key. i.e., update the following
-  #
-  #     $refs: <ref>.<keyVal>: $: <path>: [<ref>, <key>]
-  #                         *
-  #                         |
-  #                       Update <keyVal> = <lookup(key)>
-  updateRefsForKey: (path, ver, data) ->
-    self = this
-    if refs = @_adapter.get "$keys.#{path}.$", data
-      @_eachValidRef refs, data, (path, ref, key, type) ->
-        self.$indexRefs path, ref, key, type, ver, data
-    @eachValidRefPointingTo path, data, (pointingPath, targetPathRemainder, ref, key, type) ->
-      self.updateRefsForKey pointingPath + '.' + targetPathRemainder, ver, data
+      return [curr, currPath, i]
 
-  ## Iterators ##
-  _eachValidRef: (refs, data, callback) ->
-    for path, [ref, key, type] of refs
+  @addListener key, (match, method, args) ->
+    if i = mutators[method].insertArgs
+      while (id = args[i])?
+        args[i] = model.get(to + '.' + id)
+        i++
+    return from
+  @addListener "#{to}.*", (match) ->
+    id = match[1]
+    if ~(i = id.indexOf '.')
+      remainder = id.substr i + 1
+      id = id.substr 0, i
+    if map = model.get key
+      for value, i in map
+        if `value == id`
+          found = true
+          break
+    return null unless found
+    return if remainder then "#{from}.#{i}.#{remainder}" else "#{from}.#{i}"
 
-      continue if path == specIdentifier
+  return
 
-      # Check to see if the reference is still the same
-      o = @_adapter.getRef path, data
-      if o && o.$r == ref && `o.$k == key`
-        # test `o.$k == key` not via ===
-        # because key is converted to null when JSON.stringified before being sent here via socket.io
-        callback path, ref, key, type
-      else
-        delete refs[path]
-        # Lazy cleanup
-
-  # Passes back a set of references when we find references to path.
-  # Also passes back a set of references and a path remainder
-  # every time we find references to any of path's ancestor paths
-  # such that `ancestor_path + path_remainder == path`
-  _eachRefSetPointingTo: (path, refs, fn) ->
-    i = 0
-    refPos = refs
-    props = path.split '.'
-    while prop = props[i++]
-      return unless refPos = refPos[prop]
-      if refSet = refPos.$
-        fn refSet, props.slice(i).join('.'), prop
-
-  eachValidRefPointingTo: (targetPath, data, fn) ->
-    return unless refs = @_adapter.get '$refs', data
-    self = this
-    self._eachRefSetPointingTo targetPath, refs, (refSet, targetPathRemainder, possibleIndex) ->
-      # refSet has signature: { "#{pointingPath}$#{ref}": [pointingPath, ref], ... }
-      self._eachValidRef refSet, data, (pointingPath, ref, key, type) ->
-        if type == 'array'
-          targetPathRemainder = possibleIndex + '.' + targetPathRemainder
-        fn pointingPath, targetPathRemainder, ref, key, type
-
-  eachArrayRefKeyedBy: (path, data, fn) ->
-    return unless refs = @_adapter.get '$keys', data
-    refSet = (path + '.$').split('.').reduce (refSet, prop) ->
-      refSet && refSet[prop]
-    , refs
-    return unless refSet
-    for path, [ref, key, type] of refSet
-      fn path, ref, key if type == 'array'
-
-  # Notify any path that referenced the `path`. And
-  # notify any path that referenced the path that referenced the path.
-  # And notify ... etc...
-  notifyPointersTo: (method, [targetPath, args...], isLocal, _with, meta) ->
-    model = @_model
-    adapter = @_adapter
-    data = model._specModel()
-    ignoreRoots = []
-
-    # Takes care of regular refs
-    @eachValidRefPointingTo targetPath, data, (pointingPath, targetPathRemainder, ref, key, type) ->
-      if type isnt 'array'
-        return if alreadySeen pointingPath, ref, ignoreRoots
-        pointingPath += '.' + targetPathRemainder if targetPathRemainder
-      else if targetPathRemainder
-        # Take care of target paths which include an array ref pointer path
-        # as a substring of the target path.
-        [id, rest...] = targetPathRemainder.split '.'
-        keyArr = adapter.get key, data
-        index = keyArr.indexOf id
-        # Handle numbers just in case
-        index = if index == -1 then keyArr.indexOf parseInt(id, 10) else index
-        unless index == -1
-          pointingPath += '.' + index
-          pointingPath += '.' + rest.join('.') if rest.length
-      model.emit method, [pointingPath, args...], isLocal, _with, meta
-
-    # Takes care of array refs
-    @eachArrayRefKeyedBy targetPath, data, (pointingPath, ref, key) ->
-      args = [pointingPath, args...]
-      # Turn keys into their values
-      if i = mutators[method].insertArgs
-        obj = adapter.get ref, data
-        while (key = args[i])?
-          args[i++] = obj[key]
-      indiciesToIds args, meta
-      model.emit method, args, isLocal, _with, meta
-
-  cleanupPointersTo: (path, ver, data) ->
-    adapter = @_adapter
-    refs = adapter.get "$refs.#{path}.$", data
-    return if refs is undefined
-    for pointingPath, [ref, key] of refs
-      keyVal = key && adapter.get key, data
-      if keyVal && Array.isArray keyVal
-        keyMem = path.substr(ref.length + 1, pointingPath.length)
-        # Adapter method is used directly to avoid an infinite loop
-        adapter.remove key, keyVal.indexOf(keyMem), 1, null, data
-        @updateRefsForKey key, ver, data
-#      else
-#        # TODO Use model.del here instead?
-#        adapter.del pointingPath, null
-
-# For avoiding infinite event emission
-alreadySeen = (pointingPath, ref, ignoreRoots) ->
-  # TODO More proper way to detect cycles? Or is this sufficient?
-  for root of ignoreRoots
-    return true if root == pointingPath.substr 0, root.length
-  ignoreRoots.push ref
-  return false
-
-# Replace index arg with id specified in meta
-indiciesToIds = (args, meta) ->
-  if ids = meta?.ids then for i, id of ids
-    args[i] = {id, index: args[i]}
+mergeAll RefList::, Ref::,
+  modelMethod: 'refList'

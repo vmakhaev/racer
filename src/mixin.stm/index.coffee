@@ -14,7 +14,7 @@ stm = module.exports =
 
   init: ->
     # Context (i.e., this) is Model instance
-    @_specCache =
+    @_specCache = specCache =
       invalidate: ->
         delete @data
         delete @lastTxnId
@@ -27,35 +27,28 @@ stm = module.exports =
     # atomic models that have been generated stored by atomic transaction id.
     @_atomicModels = {}
 
-    @_txnCount = 0
+    @_count =
+      txn: 0
+      id: 0
     @_txns = txns = {}
     @_txnQueue = txnQueue = []
-    adapter = @_adapter
-    self = this
-
-    txnApplier = new Serializer
-      withEach: (txn) ->
-        if transaction.base(txn) > adapter.version()
-          isLocal = 'callback' of txn
-          self._applyTxn txn, isLocal
-      onTimeout: -> self._reqNewTxns()
-
-    @_onTxn = (txn, num) ->
-      # Copy meta properties onto this transaction if it matches one in the queue
-      if queuedTxn = txns[transaction.id txn]
-        txn.callback = queuedTxn.callback
-        txn.emitted = queuedTxn.emitted
-      txnApplier.add txn, num
-
-    @_onTxnNum = (num) ->
-      # Reset the number used to keep track of pending transactions
-      txnApplier.setIndex (+num || 0) + 1
-      txnApplier.clearPending()
 
     @_removeTxn = (txnId) ->
       delete txns[txnId]
       if ~(i = txnQueue.indexOf txnId) then txnQueue.splice i, 1
-      self._specCache.invalidate()
+      specCache.invalidate()
+
+    self = this
+    adapter = @_adapter
+    @_onTxn = (txn) ->
+      # Copy meta properties onto this transaction if it matches one in the queue
+      if queuedTxn = txns[transaction.id txn]
+        txn.callback = queuedTxn.callback
+        txn.emitted = queuedTxn.emitted
+
+      if transaction.base(txn) > adapter.version
+        isLocal = 'callback' of txn
+        self._applyTxn txn, isLocal
 
     # The value of @_force is checked in @_addOpAsTxn. It can be used to create a
     # transaction without conflict detection, such as model.force.set
@@ -64,25 +57,47 @@ stm = module.exports =
     @async = new Async this
 
   setupSocket: (socket) ->
-    {_adapter, _txns, _txnQueue, _onTxn, _removeTxn} = self = this
-    
+    self = this
+    adapter = @_adapter
+    txns = @_txns
+    txnQueue = @_txnQueue
+    removeTxn = @_removeTxn
+    onTxn = @_onTxn
+
+    notReady = true
     @_commit = commit = (txn) ->
-      return if txn.isPrivate || !socket.socket.connected
+      return if txn.isPrivate || notReady
       txn.timeout = +new Date + SEND_TIMEOUT
       socket.emit 'txn', txn, self._startId
 
-    # STM Callbacks
-    socket.on 'txn', _onTxn
+    txnApplier = new Serializer
+      withEach: onTxn
+      onTimeout: newTxns = ->
+        socket.emit 'txnsSince', adapter.version + 1, self._startId, (newTxns, num) ->
 
-    socket.on 'txnNum', @_onTxnNum
+          # Apply any missed transactions first
+          for txn in newTxns
+            onTxn txn
+
+          # Reset the number used to keep track of pending transactions
+          txnApplier.clearPending()
+          txnApplier.setIndex num + 1
+          notReady = false
+
+          # Resend all transactions in the queue
+          for id in txnQueue
+            commit txns[id]
+
+    socket.on 'txn', (txn, num) ->
+      txnApplier.add txn, num
 
     socket.on 'txnOk', (txnId, base, num) ->
-      return unless txn = _txns[txnId]
+      return unless txn = txns[txnId]
       transaction.base txn, base
-      _onTxn txn, num
+      txnApplier.add txn, num
 
     socket.on 'txnErr', (err, txnId) ->
-      txn = _txns[txnId]
+      txn = txns[txnId]
       if txn && (callback = txn.callback)
         if transaction.isCompound txn
           callbackArgs = transaction.ops txn
@@ -90,40 +105,37 @@ stm = module.exports =
           callbackArgs = transaction.args(txn).slice 0
         callbackArgs.unshift err
         callback callbackArgs...
-      _removeTxn txnId
-    # Request any transactions that may have been missed
-    @_reqNewTxns = -> socket.emit 'txnsSince', _adapter.version() + 1, self._startId
+      removeTxn txnId
 
     resendInterval = null
     resend = ->
       now = +new Date
-      for id in _txnQueue
-        txn = _txns[id]
+      for id in txnQueue
+        txn = txns[id]
         return if !txn || txn.timeout > now
         commit txn
 
     socket.on 'connect', ->
-      # Resend all transactions in the queue
-      for id in _txnQueue
-        commit _txns[id]
+      newTxns()
       # Set an interval to check for transactions that have been in the queue
       # for too long and resend them
       resendInterval = setInterval resend, RESEND_INTERVAL unless resendInterval
-  
+
     socket.on 'disconnect', ->
+      notReady = true
       # Stop resending transactions while disconnected
       clearInterval resendInterval if resendInterval
       resendInterval = null
 
   proto:
+    id: -> '$_' + @_clientId + '_' + (@_count.id++).toString 36
+
     ## Socket.io communication ##
     _commit: ->
-    _reqNewTxns: ->
-
 
     ## Transaction handling ##
-    
-    _nextTxnId: -> @_clientId + '.' + @_txnCount++
+
+    _nextTxnId: -> @_clientId + '.' + @_count.txn++
 
     _queueTxn: (txn, callback) ->
       txn.callback = callback
@@ -131,7 +143,7 @@ stm = module.exports =
       @_txns[id] = txn
       @_txnQueue.push id
 
-    _getVer: -> if @_force then null else @_adapter.version()
+    _getVer: -> if @_force then null else @_adapter.version
 
     _addOpAsTxn: (method, args, callback) ->
       # Refs may mutate the args in its 'beforeTxn' handler
@@ -142,21 +154,17 @@ stm = module.exports =
       # Create a new transaction
       base = @_getVer()
       id = @_nextTxnId()
-      meta = args.meta
-      txn = transaction.create {base, id, method, args, meta}
+      txn = transaction.create {base, id, method, args}
       txn.isPrivate = pathParser.isPrivate path
 
       @_queueTxn txn, callback
       out = @_specModel().$out
 
-      unless @_silent
-        # Clone the args, so that they can be modified before being emitted
-        # without affecting the txn args
-        args = args.slice()
-        # Version must be null, since this is speculative
-        @emit method + 'Post', args, null, null, meta
-        # Emit an event immediately on creation of the transaction
-        @emit method, args, true, @_with, meta
+      # Clone the args, so that they can be modified before being emitted
+      # without affecting the txn args
+      args = args.slice()
+      # Emit an event immediately on creation of the transaction
+      @emit method, args, out, true, @_pass
       txn.emitted = true
 
       # Send it over Socket.IO or to the store on the server
@@ -167,7 +175,7 @@ stm = module.exports =
       @_removeTxn transaction.id txn
 
       data = @_adapter._data
-      doEmit = !(txn.emitted || @_silent)
+      doEmit = !txn.emitted
       ver = transaction.base txn
       if isCompound = transaction.isCompound txn
         ops = transaction.ops txn
@@ -187,12 +195,10 @@ stm = module.exports =
       method = extractor.method mutation
       return if method is 'get'
       args = extractor.args mutation
-      meta = extractor.meta mutation
-      @emit method + 'Pre', args, ver, data, meta
-      obj = @_adapter[method] args..., ver, data
-      @emit method + 'Post', args, ver, data, meta
-      @emit method, args, isLocal, null, meta  if doEmit
-      return obj
+      out = @_adapter[method] args..., ver, data
+      @emit method + 'Post', args, ver
+      @emit method, args, out, isLocal, @_pass  if doEmit
+      return out
 
     _specModel: ->
       txns = @_txns
@@ -269,95 +275,168 @@ stm = module.exports =
     get:
       type: 'basic'
       fn: (path) ->
+        if at = @_at
+          path = if path then at + '.' + path else at
         @_adapter.get path, @_specModel()
 
   mutators:
 
     set:
       type: 'basic'
-      fn: (path, val, callback) ->
-        @_addOpAsTxn 'set', [path, val], callback
+      fn: (path, value, callback) ->
+        if at = @_at
+          len = arguments.length
+          path = if len is 1 || len is 2 && typeof value is 'function'
+            callback = value
+            value = path
+            at
+          else
+            at + '.' + path
+        @_addOpAsTxn 'set', [path, value], callback
 
     del:
       type: 'basic'
       fn: (path, callback) ->
+        if at = @_at
+          path = if typeof path is 'string'
+            at + '.' + path
+          else
+            callback = path
+            at
         @_addOpAsTxn 'del', [path], callback
 
     setNull:
       type: 'compound'
       fn: (path, value, callback) ->
-        obj = @get path
+        len = arguments.length
+        obj = if @_at && len is 1 || len is 2 && typeof value is 'function'
+          @get()
+        else
+          @get path
         return obj  if obj?
-        @set path, value, callback
+
+        if len is 1
+          return @set path
+        else if len is 2
+          return @set path, value
+        else
+          return @set path, value, callback
 
     incr:
       type: 'compound'
       fn: (path, byNum, callback) ->
-        # incr(path, callback)
+        if typeof path isnt 'string'
+          callback = byNum
+          byNum = path
+          path = ''
+
         if typeof byNum is 'function'
           callback = byNum
           byNum = 1
-        # incr(path)
         else if typeof byNum isnt 'number'
           byNum = 1
-        @set path, (@get(path) || 0) + byNum, callback
+        value = (@get(path) || 0) + byNum
+
+        if path
+          @set path, value, callback
+          return value
+
+        if callback
+          @set value, callback
+        else
+          @set value
+        return value
 
     push:
       type: 'array'
       insertArgs: 1
-      fn: (args..., callback) ->
-        if typeof callback isnt 'function'
-          args.push callback
-          callback = null
+      fn: (args...) ->
+        if at = @_at
+          if typeof (path = args[0]) is 'string' && typeof @get() is 'object'
+            args[0] = at + '.' + path
+          else
+            args.unshift at
+
+        if typeof args[args.length - 1] is 'function'
+          callback = args.pop()
         @_addOpAsTxn 'push', args, callback
 
     unshift:
       type: 'array'
       insertArgs: 1
-      fn: (args..., callback) ->
-        if typeof callback isnt 'function'
-          args.push callback
-          callback = null
+      fn: (args...) ->
+        if at = @_at
+          if typeof (path = args[0]) is 'string' && typeof @get() is 'object'
+            args[0] = at + '.' + path
+          else
+            args.unshift at
+
+        if typeof args[args.length - 1] is 'function'
+          callback = args.pop()
         @_addOpAsTxn 'unshift', args, callback
 
-    splice:
+    insert:
       type: 'array'
       indexArgs: [1]
-      insertArgs: 3
-      fn: (args..., callback) ->
-        if typeof callback isnt 'function'
-          args.push callback
-          callback = null
-        @_addOpAsTxn 'splice', args, callback
+      insertArgs: 2
+      fn: (args...) ->
+        if at = @_at
+          # isNaN will be false for index values in a string like '3'
+          if typeof (path = args[0]) is 'string' && isNaN path
+            args[0] = at + '.' + path
+          else
+            args.unshift at
+        if match = /^(.*)\.(\d+)$/.exec args[0]
+          # Use the index from the path if it ends in an index segment
+          args[0] = match[1]
+          args.splice 1, 0, match[2]
+
+        if typeof args[args.length - 1] is 'function'
+          callback = args.pop()
+        @_addOpAsTxn 'insert', args, callback
 
     pop:
       type: 'array'
       fn: (path, callback) ->
+        if at = @_at
+          path = if typeof path is 'string'
+            at + '.' + path
+          else
+            callback = path
+            at
         @_addOpAsTxn 'pop', [path], callback
 
     shift:
       type: 'array'
       fn: (path, callback) ->
+        if at = @_at
+          path = if typeof path is 'string'
+            at + '.' + path
+          else
+            callback = path
+            at
         @_addOpAsTxn 'shift', [path], callback
-
-    insertBefore:
-      type: 'array'
-      indexArgs: [1]
-      insertArgs: 2
-      fn: (path, beforeIndex, value, callback) ->
-        @_addOpAsTxn 'insertBefore', [path, beforeIndex, value], callback
-
-    insertAfter:
-      type: 'array'
-      indexArgs: [1]
-      insertArgs: 2
-      fn: (path, afterIndex, value, callback) ->
-        @_addOpAsTxn 'insertAfter', [path, afterIndex, value], callback
 
     remove:
       type: 'array'
       indexArgs: [1]
       fn: (path, start, howMany, callback) ->
+        if at = @_at
+          # isNaN will be false for index values in a string like '3'
+          path = if typeof path is 'string' && isNaN path
+            at + '.' + path
+          else
+            callback = howMany
+            howMany = start
+            start = path
+            at
+        if match = /^(.*)\.(\d+)$/.exec path
+          # Use the index from the path if it ends in an index segment
+          callback = howMany
+          howMany = start
+          start = match[2]
+          path = match[1]
+
         # remove(path, start, callback)
         if typeof howMany is 'function'
           callback = howMany
@@ -371,4 +450,20 @@ stm = module.exports =
       type: 'array'
       indexArgs: [1, 2]
       fn: (path, from, to, callback) ->
+        if at = @_at
+          # isNaN will be false for index values in a string like '3'
+          path = if typeof path is 'string' && isNaN path
+            at + '.' + path
+          else
+            callback = to
+            to = from
+            from = path
+            at
+        if match = /^(.*)\.(\d+)$/.exec path
+          # Use the index from the path if it ends in an index segment
+          callback = to
+          to = from
+          from = match[2]
+          path = match[1]
+
         @_addOpAsTxn 'move', [path, from, to], callback

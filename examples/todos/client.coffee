@@ -17,7 +17,7 @@ $ racer.ready ->
   todoList = $ '#todos'
   content = $ '#content'
   overlay = $ '#overlay'
-  listPath = '_group.todoList'
+  listPath = '_todoList'
 
 
   ## Update the DOM when the model changes ##
@@ -34,21 +34,21 @@ $ racer.ready ->
   model.on 'push', listPath, (value) ->
     todoList.append todoHtml(value)
 
-  model.on 'insertBefore', listPath, (index, value) ->
+  model.on 'insert', listPath, (index, value) ->
     todoList.children().eq(index).before todoHtml(value)
 
   model.on 'set', '_group.todos.*.completed', (id, value) ->
     $("##{id}").toggleClass 'completed', value
     $("#check#{id}").prop 'checked', value
 
-  model.on 'remove', listPath, ({id}) ->
+  model.on 'remove', listPath, (index, howMany, [id]) ->
     $("##{id}").remove()
 
-  model.on 'move', listPath, ({id, index}, to) ->
+  model.on 'move', listPath, (from, to, id) ->
     target = todoList.children().get to
     # Don't move if the item is already in the right position
     return if id.toString() is target.id
-    if index > to && to != -1
+    if from > to && to != -1
       $("##{id}").insertBefore target
     else
       $("##{id}").insertAfter target
@@ -86,7 +86,7 @@ $ racer.ready ->
         # Append to the end if there are no completed items
         model.push listPath, todo
       else
-        model.insertBefore listPath, i, todo
+        model.insert listPath, i, todo
 
     check: (checkbox, id) ->
       model.set "_group.todos.#{id}.completed", checkbox.checked

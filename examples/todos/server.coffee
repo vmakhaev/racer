@@ -33,13 +33,12 @@ app.get '/:group', (req, res) ->
         2: {id: 2, completed: false, text: 'Another example'}
       todoIds: [1, 2, 0]
       nextId: 3
-    # Currently, refs must be explicitly declared per model; otherwise the ref
-    # is not added the model's internal reference indices
-    model.set '_group.todoList', model.arrayRef '_group.todos', '_group.todoIds'
+    # Refs must be explicitly declared per model; they are not stored as data
+    model.refList '_todoList', '_group.todos', '_group.todoIds'
     # model.bundle waits for any pending model operations to complete and then
     # returns the JSON data for initialization on the client
     model.bundle (bundle) ->
-      listHtml = (shared.todoHtml todo for todo in model.get '_group.todoList').join('')
+      listHtml = (shared.todoHtml todo for todo in model.get '_todoList').join('')
       res.send """
       <!DOCTYPE html>
       <title>Todos</title>
@@ -54,8 +53,8 @@ app.get '/:group', (req, res) ->
       <div id=dragbox></div>
       <div id=content><ul id=todos>#{listHtml}</ul></div>
       <script>init=#{bundle}</script>
-      <script src=https://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js></script>
-      <script src=https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.15/jquery-ui.min.js></script>
+      <script src=https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js></script>
+      <script src=https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/jquery-ui.min.js></script>
       <script src=script.js></script>
       """
 

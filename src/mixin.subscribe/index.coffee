@@ -1,5 +1,3 @@
-# TODO What do we do with subscribe when we migrate to a persistence store that does not carry all the data under a tree, but rather in a graph? e.g., dbrefs in mongodb, On the one extreme, we do eager loading, which enables us to use the synchronous interface of Model instances for subscribed data. The other extreme is to load the data we are subscribed to lazily in a Model instance as we need it; in this case, it is better to provide the user with a more Promise-based async interface.
-
 pathParser = require '../pathParser'
 empty = ->
 
@@ -11,12 +9,12 @@ module.exports =
     @_storeSubs = {}
 
   setupSocket: (socket) ->
-    {_adapter} = self = this
+    self = this
     socket.on 'connect', ->
       # Establish subscriptions upon connecting and get any transactions
       # that may have been missed
       storeSubs = Object.keys self._storeSubs
-      socket.emit 'sub', self._clientId, storeSubs, _adapter.version(), self._startId
+      socket.emit 'sub', self._clientId, storeSubs, self._adapter.version, self._startId
 
   proto:
     subscribe: (_paths..., callback) ->
@@ -29,7 +27,7 @@ module.exports =
       paths = []
       storeSubs = @_storeSubs
       addPath = (path) ->
-        for path in pathParser.expand path        
+        for path in pathParser.expand path
           return if storeSubs[path]
           # These subscriptions are reestablished when the client connects
           storeSubs[path] = 1
@@ -39,7 +37,7 @@ module.exports =
         if typeof path is 'object'
           for key, value of path
             root = pathParser.split(value)[0]
-            @set key, @ref root
+            @ref key, root
             addPath value
         else addPath path
 
