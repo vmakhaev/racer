@@ -132,7 +132,6 @@ module.exports = {
 
       function authorAck (req, res, next) {
         var txn = req.data;
-        console.log("RES.NUM", res.num);
         res.send(txn, res.num);
         next();
       }
