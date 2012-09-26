@@ -87,11 +87,13 @@ function plugin (racer) {
   , fetch: function (targets, contextName) { return blue('fetch ') + joinArgs(targets); }
   };
   racer.log.outgoing.events = {
-    txnOk: function () { return false; }
+    txnOk: function (txn, num) { return "txnOk (num: " + num + ") " + handleTxn(txn); }
+  // , txnOk: function (txn, num) { return false; }
   , txn: handleTxn
   , newListener: function () { return false; }
   , fatalErr: function (err) { return red('Fatal error: ' + err); }
   , "snapshotUpdate:newTxns": function () { return 'Asking client to request a snapshot update of new transactions'; }
+  , "snapshotUpdate:replace": function () { return 'Sending new snapshot of all model data'; }
   , resyncWithStore: function () { return 'Asking client to resync with store'; }
   , refreshHtml: function() { return 'Updating HTML templates'; }
   , refreshCss: function() { return 'Updating CSS'; }
