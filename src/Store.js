@@ -14,6 +14,8 @@ var EventEmitter = require('events').EventEmitter
   , racerDebug  = debugGenerator('racer')
   , createMiddleware = require('./middleware')
   , uuid = require('node-uuid')
+  , Stream = require('stream')
+  , util = require('util')
   ;
 
 module.exports = Store;
@@ -45,7 +47,7 @@ module.exports = Store;
  */
 function Store (options) {
   if (! options) options = {};
-  EventEmitter.call(this);
+  Stream.call(this);
 
   this.racer = options.racer;
 
@@ -85,7 +87,62 @@ function Store (options) {
   db.setupRoutes(this);
 }
 
-Store.prototype.__proto__ = EventEmitter.prototype;
+util.inherits(Store, Stream);
+
+function composeStreams () {
+  var arglen = arguments.length;
+  var streams = Array.prototype.slice.call(arguments, 0, arglen);
+  var firstStream = streams[0];
+  var lastStream = streams[arglen-1];
+
+  for (var i = 0; i < arglen-1; i++) {
+    streams[i].pipe(streams[i+1]);
+  }
+
+  var compositeStream = new Stream;
+  compositeStream.writable = true;
+  compositeStream.readable = true;
+
+  compositeStream.write = function (data) {
+    return firstStream.write(data);
+  };
+  compositeStream.end = function (data) {
+    this.writable = false;
+    return firstStream.end(data);
+  };
+  compositeStream.destroy = function () {
+    return firstStream.destroy();
+  };
+  firstStream.on('drain', function () {
+    return compositeStream.emit('drain');
+  });
+
+  lastStream.on('data', function (data) {
+    return compositeStream.emit('data', data);
+  });
+  lastStream.on('end', function (data) {
+    return compositeStream.emit('end', data);
+  });
+  lastStream.on('error', function (err) {
+    return compositeStream.emit('error', err);
+  });
+  lastStream.on('close', function () {
+    return compositeStream.close();
+  });
+  compositeStream.pause = function () {
+    return lastStream.pause();
+  };
+  compositeStream.resume = function () {
+    return lastStream.resume();
+  };
+}
+
+Store.prototype.createStream = function () {
+  var ev = emitStream(stream);
+  var stream = composeStreams(streamA, streamB);
+  this.mixinEmit('stream', stream);
+  return stream;
+};
 
 Store.prototype.listen = function (to, namespace) {
   var io = this.io = socketio.listen(to);
