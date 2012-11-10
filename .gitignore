@@ -1,9 +1,8 @@
 *.swp
+*.un~
 *.gz
 *.rdb
 test-output.tmp
 node_modules/
-lib/
-dev/
 examples/*/*.js
 scratch/
