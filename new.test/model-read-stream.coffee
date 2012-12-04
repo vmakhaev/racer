@@ -9,24 +9,27 @@ describe 'Model read stream', ->
   it 'should stream transactions', ->
     model = new Model
     model._clientId = 'x'
+    model.readStream.resume()
     emitter = emitStream model.readStream
     callback = sinon.spy()
     emitter.on 'txn', callback
     model.set 'collection.1', a: 1, b: 2
-    expect(callback).to.be.called
+    expect(callback).to.be.calledOnce()
 
   it 'should not stream private path transactions', ->
     model = new Model
     model._clientId = 'x'
+    model.readStream.resume()
     emitter = emitStream model.readStream
     callback = sinon.spy()
     emitter.on 'txn', callback
     model.set 'collection.1._temporary', 'x'
-    expect(callback).to.not.be.called
+    expect(callback).to.have.callCount(0)
 
   it "should not stream a txn if the relevant doc already has an inflight txn (i.e., unack'ed)", ->
     model = new Model
     model._clientId = 'x'
+    model.readStream.resume()
     emitter = emitStream model.readStream
     callback = sinon.spy()
     emitter.on 'txn', callback
@@ -37,6 +40,7 @@ describe 'Model read stream', ->
   it 'should stream a txn if no doc-related inflight txns, even if other docs have inflight txns', ->
     model = new Model
     model._clientId = 'x'
+    model.readStream.resume()
     emitter = emitStream model.readStream
     callback = sinon.spy()
     emitter.on 'txn', callback
@@ -47,6 +51,7 @@ describe 'Model read stream', ->
   it "should stream a pending txn once all inflight txns for the same doc have been ack'ed", ->
     model = new Model
     model._clientId = 'x'
+    model.readStream.resume()
     emitter = emitStream model.readStream
     callback = sinon.spy()
     emitter.on 'txn', callback
@@ -59,3 +64,38 @@ describe 'Model read stream', ->
 
     remoteEmitter.emit 'txnOk', transaction.create(id: 'x.0', method: 'set', args: ['collection.1', {a: 1, b: 2}])
     expect(callback).to.be.calledTwice()
+
+  it 'should be paused by default', ->
+    model = new Model
+    expect(model.readStream.paused).to.be.ok()
+
+  it 'should re-send an inflight txn if the stream is resumed (i.e., unpaused), and an inflight txn is on record', ->
+    model = new Model
+    model._clientId = 'x'
+    model.readStream.resume()
+    emitter = emitStream model.readStream
+    callback = sinon.spy()
+    emitter.on 'txn', callback
+    model.set 'collection.1', a: 1, b: 2
+    model.readStream.pause()
+    model.readStream.resume()
+    expect(callback).to.be.calledTwice()
+
+  it 'should send pending txns if the stream is resumed (i.e., unpaused), after re-sending and acking inflight txns', ->
+    model = new Model
+    model._clientId = 'x'
+    model.readStream.resume()
+    emitter = emitStream model.readStream
+    callback = sinon.spy()
+    emitter.on 'txn', callback
+    model.set 'collection.1', a: 1, b: 2
+    model.set 'collection.1.a', 3
+    model.readStream.pause()
+    model.readStream.resume()
+
+    remoteEmitter = new EventEmitter
+    remoteStream = emitStream remoteEmitter
+    remoteStream.pipe model.writeStream
+
+    remoteEmitter.emit 'txnOk', transaction.create(id: 'x.0', method: 'set', args: ['collection.1', {a: 1, b: 2}])
+    expect(callback).to.have.callCount(3)
