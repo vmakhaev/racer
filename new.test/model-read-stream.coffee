@@ -1,6 +1,8 @@
 emitStream = require 'emit-stream'
 sinon = require 'sinon'
+{EventEmitter} = require 'events'
 {BrowserModel: Model} = require '../test/util/model'
+transaction = require('../lib/transaction')
 expect = require 'expect.js'
 
 describe 'Model read stream', ->
@@ -40,4 +42,20 @@ describe 'Model read stream', ->
     emitter.on 'txn', callback
     model.set 'collection.1', a: 1, b: 2
     model.set 'collection.2', a: 1, b: 2
+    expect(callback).to.be.calledTwice()
+
+  it "should stream a pending txn once all inflight txns for the same doc have been ack'ed", ->
+    model = new Model
+    model._clientId = 'x'
+    emitter = emitStream model.readStream
+    callback = sinon.spy()
+    emitter.on 'txn', callback
+    model.set 'collection.1', a: 1, b: 2
+    model.set 'collection.1.a', 3
+
+    remoteEmitter = new EventEmitter
+    remoteStream = emitStream remoteEmitter
+    remoteStream.pipe model.writeStream
+
+    remoteEmitter.emit 'txnOk', transaction.create(id: 'x.0', method: 'set', args: ['collection.1', {a: 1, b: 2}])
     expect(callback).to.be.calledTwice()
