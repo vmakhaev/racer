@@ -227,6 +227,7 @@ describe 'Model read stream', ->
 
         it 'should be transformed against inflight and pending txns'
 
+      # Test out of order remote transactions on a document
       describe 'if the txn version is not the next expected one', ->
         before ->
           @remoteTxn = transaction.create
@@ -235,12 +236,12 @@ describe 'Model read stream', ->
             args: ['collection.1.name', 'Brian']
             id: 'another-client.1'
 
-        it 'should not update the doc version if the txn version is not the next expected one', ->
+        it 'should not update the doc version', ->
           expect(@model.version('collection.1')).to.equal 0
           @remoteEmitter.emit 'txn', @remoteTxn
           expect(@model.version('collection.1')).to.equal 0
 
-        it 'should not mutate the document if the txn version is not the next expected one', ->
+        it 'should not mutate the document', ->
           expect(@result.get()).to.eql
             id: 1
             name: 'Bryan'
@@ -248,6 +249,25 @@ describe 'Model read stream', ->
           expect(@result.get()).to.eql
             id: 1
             name: 'Bryan'
+
+        describe 'then subsequently receiving a missing txn', ->
+          beforeEach ->
+            @remoteEmitter.emit 'txn', @remoteTxn
+            @missingTxn = transaction.create
+              ver: 0
+              method: 'set'
+              args: ['collection.1.height', 6]
+
+          it 'should update the doc version', ->
+            @remoteEmitter.emit 'txn', @missingTxn
+            expect(@model.version('collection.1')).to.equal 2
+
+          it 'should mutate the doc', ->
+            @remoteEmitter.emit 'txn', @missingTxn
+            expect(@result.get()).to.eql
+              id: 1
+              name: 'Brian'
+              height: 6
 
     describe 'when subscribed to 2+ targets', ->
       it 'should not be applied if the txn version is not the next expected one'
