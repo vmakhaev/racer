@@ -19,19 +19,19 @@ describe 'Model read stream', ->
 
     it 'should stream transactions', ->
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1', a: 1, b: 2
       expect(callback).to.be.calledOnce()
 
     it 'should not stream private path transactions', ->
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1._temporary', 'x'
       expect(callback).to.have.callCount(0)
 
     it "should not stream a txn if the relevant doc already has an inflight txn (i.e., unack'ed)", ->
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1', a: 1, b: 2
       @model.set 'collection.1.a', 3
       expect(callback).to.be.calledOnce()
@@ -39,7 +39,7 @@ describe 'Model read stream', ->
     it 'should stream a txn if no doc-related inflight txns, even if other docs have inflight txns', ->
       @emitter = emitStream @model.readStream
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1', a: 1, b: 2
       @model.set 'collection.2', a: 1, b: 2
       expect(callback).to.be.calledTwice()
@@ -47,7 +47,7 @@ describe 'Model read stream', ->
     it "should stream a pending txn once all inflight txns for the same doc have been ack'ed", ->
       callback = sinon.spy()
       firstTxn = null
-      @emitter.on 'txn', (txn) ->
+      @emitter.on 'txns', ([txn]) ->
         firstTxn ||= txn
         callback(txn)
       @model.set 'collection.1', a: 1, b: 2
@@ -62,7 +62,7 @@ describe 'Model read stream', ->
 
     it 'should re-send an inflight txn if the stream is resumed (i.e., unpaused), and an inflight txn is on record', ->
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1', a: 1, b: 2
       @model.readStream.pause()
       @model.readStream.resume()
@@ -71,7 +71,7 @@ describe 'Model read stream', ->
     it 'should send pending txns if the stream is resumed (i.e., unpaused), after re-sending and acking inflight txns', ->
       callback = sinon.spy()
       firstTxn = null
-      @emitter.on 'txn', (txn) ->
+      @emitter.on 'txns', ([txn]) ->
         firstTxn ||= txn
         callback txn
       @model.set 'collection.1', a: 1, b: 2
@@ -152,17 +152,17 @@ describe 'Model read stream', ->
       @model.readStream.resume()
       @emitter = emitStream @model.readStream
 
-    it 'should trigger the sending of any pending transactions xxx', ->
+    it 'should trigger the sending of any pending transactions', ->
       callback = sinon.spy()
       firstTxn = null
-      @emitter.once 'txn', (txn) ->
+      @emitter.once 'txns', ([txn]) ->
         firstTxn = txn
         callback txn
       @model.set 'collection.1', a: 1, b: 2
       expect(callback).to.be.calledOnce()
 
       callback = sinon.spy()
-      @emitter.on 'txn', callback
+      @emitter.on 'txns', callback
       @model.set 'collection.1.a', 4
       expect(callback).to.not.be.calledOnce()
 
@@ -173,6 +173,52 @@ describe 'Model read stream', ->
       remoteEmitter.emit 'ack.txn', transaction.getId(firstTxn)
       expect(callback).to.be.calledOnce()
 
+    describe 'timing out', ->
+      it 'should re-send inflight transactions xxx', (done) ->
+        @model.ackTimeout = 400
+        callback = sinon.spy()
+        firstTxn = null
+        @emitter.once 'txns', ([txn]) ->
+          firstTxn = txn
+          callback txn
+        @model.set 'collection.1', a: 1, b: 2
+        expect(callback).to.be.calledOnce()
+        @emitter.on 'txns', callback
+
+        # Now, we suppose that for some reason the 'ack.txn' did not get
+        # delivered to us. After some time, we would re-send the inflight
+        # transaction.
+        setTimeout ->
+          expect(callback).to.be.calledTwice()
+          done()
+        , 800
+
+#    describe '', ->
+#      it 'should trigger the sending of any pending transactions', (done) ->
+#        callback = sinon.spy()
+#        firstTxn = null
+#        @emitter.once 'txn', (txn) ->
+#          firstTxn = txn
+#          callback txn
+#        @model.set 'collection.1', a: 1, b: 2
+#        expect(callback).to.be.calledOnce()
+#
+#        callback = sinon.spy()
+#        @emitter.on 'txn', callback
+#        # Add a pending transaction
+#        @model.set 'collection.1.a', 4
+#        expect(callback).to.not.be.calledOnce()
+#
+#        remoteEmitter = new EventEmitter
+#        remoteStream = emitStream remoteEmitter
+#        remoteStream.pipe @model.writeStream
+#
+#        # Now, we suppose that for some reason the 'ack.txn' did not get
+#        # delivered to us. After some time, we would re-send the inflight
+#        # transaction.
+#
+#        remoteEmitter.emit 'ack.txn.dupe', transaction.getId(firstTxn)
+#        expect(callback).to.be.calledOnce()
 
   describe 'incoming remote txns', ->
     describe 'when only subscribed to 1 target path', ->
