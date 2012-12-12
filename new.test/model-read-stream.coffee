@@ -193,32 +193,65 @@ describe 'Model read stream', ->
           done()
         , 800
 
-#    describe '', ->
-#      it 'should trigger the sending of any pending transactions', (done) ->
-#        callback = sinon.spy()
-#        firstTxn = null
-#        @emitter.once 'txn', (txn) ->
-#          firstTxn = txn
-#          callback txn
-#        @model.set 'collection.1', a: 1, b: 2
-#        expect(callback).to.be.calledOnce()
-#
-#        callback = sinon.spy()
-#        @emitter.on 'txn', callback
-#        # Add a pending transaction
-#        @model.set 'collection.1.a', 4
-#        expect(callback).to.not.be.calledOnce()
-#
-#        remoteEmitter = new EventEmitter
-#        remoteStream = emitStream remoteEmitter
-#        remoteStream.pipe @model.writeStream
-#
-#        # Now, we suppose that for some reason the 'ack.txn' did not get
-#        # delivered to us. After some time, we would re-send the inflight
-#        # transaction.
-#
-#        remoteEmitter.emit 'ack.txn.dupe', transaction.getId(firstTxn)
-#        expect(callback).to.be.calledOnce()
+    describe 'ack indicating the txn has already been applied', ->
+      describe "when ack'ed txn is still in pending", ->
+        it 'should trigger the sending of any pending transactions', ->
+          callback = sinon.spy()
+          firstTxn = null
+          @emitter.once 'txns', ([txn]) ->
+            firstTxn = txn
+            callback()
+          @model.set 'collection.1', a: 1, b: 2
+          expect(callback).to.be.calledOnce()
+
+          callback = sinon.spy()
+          @emitter.on 'txns', callback
+          # Add a pending transaction
+          @model.set 'collection.1.a', 4
+          expect(callback).to.not.be.calledOnce()
+
+          remoteEmitter = new EventEmitter
+          remoteStream = emitStream remoteEmitter
+          remoteStream.pipe @model.writeStream
+
+          # Now, we suppose that for some reason the 'ack.txn' did not get
+          # delivered to us. After some time, we would re-send the inflight
+          # transaction.
+
+          # The server would know that the txns were applied, so it would
+          # inform the client that the txns are duplicates
+          remoteEmitter.emit 'ack.txn.dupe', transaction.getId(firstTxn)
+          expect(callback).to.be.calledOnce()
+
+      describe "when ack'ed txn is no longer in pending (i.e., received a prior ack)", ->
+        it 'should not trigger the sending of any pending transactions', ->
+          callback = sinon.spy()
+          firstTxn = null
+          @emitter.once 'txns', ([txn]) ->
+            firstTxn = txn
+            callback()
+          @model.set 'collection.1', a: 1, b: 2
+          expect(callback).to.be.calledOnce()
+
+          subsequentCallback = sinon.spy()
+          @emitter.on 'txns', subsequentCallback
+          # Add a pending transaction
+          @model.set 'collection.1.a', 4
+          expect(subsequentCallback).to.not.be.calledOnce()
+
+          remoteEmitter = new EventEmitter
+          remoteStream = emitStream remoteEmitter
+          remoteStream.pipe @model.writeStream
+
+          remoteEmitter.emit 'ack.txn', transaction.getId(firstTxn)
+          expect(subsequentCallback).to.be.calledOnce()
+
+          # Now, we suppose that for some reason the 'ack.txn.dupe' also is
+          # delivered to us.
+
+          # We'll ignore it because we already received an 'ack.txn'
+          remoteEmitter.emit 'ack.txn.dupe', transaction.getId(firstTxn)
+          expect(callback).to.have.callCount(1)
 
   describe 'incoming remote txns', ->
     describe 'when only subscribed to 1 target path', ->
