@@ -93,7 +93,7 @@ describe 'Model fetch', ->
 
     describe 'duplicate fetches', ->
       describe 'without an overlapping subscription', ->
-        it 'should include document version data in its outgoing message xxx', (done) ->
+        it 'should include document version data in its outgoing message', (done) ->
           cb = sinon.spy()
           {id: idOne} = @model.fetch 'collection.1', (err, $docA) =>
             @emitter.on 'fetch', (msg) ->

@@ -53,7 +53,7 @@ describe 'Model txn', ->
       setTimeout ->
         expect(callback).to.be.calledTwice()
         done()
-      , 800
+      , 600
 
     describe 'ack indicating the txn has already been applied', ->
       describe "when ack'ed txn is still in pending", ->
