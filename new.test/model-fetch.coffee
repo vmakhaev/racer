@@ -503,7 +503,7 @@ describe 'Model fetch', ->
               'collection.2':
                 snapshot: docTwo
             pointers:
-              '*': ''
+              '*': true
 
         it 'should callback with a scoped model', ->
           expect(@result).to.be.a Model
@@ -549,7 +549,7 @@ describe 'Model fetch', ->
               'collection.2':
                 snapshot: docTwo
             pointers:
-              'collection.*.name': 'collection'
+              'collection.*.name': true
 
         it 'should callback with a scoped model', ->
           expect(@result).to.be.a Model
@@ -571,3 +571,41 @@ describe 'Model fetch', ->
             name: 'Nate'
           expect(@model.version('collection.1')).to.equal 0
           expect(@model.version('collection.2')).to.equal 1
+
+    describe 'collection.x...*...', ->
+      describe 'first fetch', ->
+        beforeEach (done) ->
+          doc =
+            id: 1
+            pets: [
+              {name: 'Banana'}
+              {name: 'Squeak'}
+            ]
+            _v_: 0
+
+          @model.fetch 'collection.1.pets.*.name', (err, @result) =>
+            expect(err).to.equal null
+            done()
+          @remoteEmitter.emit 'ack.fetch',
+            docs:
+              'collection.1':
+                snapshot: doc
+            pointers:
+              'collection.1.pets.*.name': true
+
+        it 'should callback with a scoped model', ->
+          expect(@result).to.be.a Model
+          expect(@result.path()).to.equal 'collection.1.pets'
+
+        it 'should initialize the proper documents and versions', ->
+          expect(@result.get()).to.eql [
+            {name: 'Banana'}
+            {name: 'Squeak'}
+          ]
+          expect(@model.get('collection.1')).to.eql
+            id: 1
+            pets: [
+              {name: 'Banana'}
+              {name: 'Squeak'}
+            ]
+          expect(@model.version('collection.1')).to.equal 0
