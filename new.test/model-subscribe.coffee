@@ -20,52 +20,45 @@ describe 'Model subscribe', ->
     @emitter.removeAllListeners()
     @remoteEmitter.removeAllListeners()
 
-  describe 'acks', ->
-    describe 'the first subscribe', ->
+  describe 'on a path', ->
+    it 'should re-send subscribes at intervals until receiving "ack.sub"', (done) ->
+      cb = sinon.spy()
+      @emitter.on 'sub', cb
+      @model.subscribe 'collection.1'
+      setTimeout ->
+        expect(cb).to.have.callCount(2)
+        done()
+      , 600
+
+    describe 'first subscribe', ->
       beforeEach ->
-        @model.readStream.resume()
+        called = false
+        {id} = @model.subscribe 'collection.1', (err, @result) =>
+          expect(err).to.equal null
+          called = true
+        expect(called).to.equal false
+        @doc =
+          id: 1
+          name: 'Bryan'
+          _v_: 0
+        @remoteEmitter.emit 'ack.sub',
+          id: id
+          docs:
+            'collection.1':
+              snapshot: @doc
+          pointers:
+            'collection.1': true
+        expect(called).to.equal true
 
-      describe 'where target is a path', ->
-        beforeEach ->
-          called = false
-          {id} = @model.subscribe 'collection.1', (err, @result) =>
-            expect(err).to.equal null
-            called = true
-          expect(called).to.equal false
-          @doc =
-            id: 1
-            name: 'Bryan'
-            _v_: 0
-          @remoteEmitter.emit 'ack.sub',
-            id: id
-            docs:
-              'collection.1':
-                snapshot: @doc
-            pointers:
-              'collection.1': true
-          expect(called).to.equal true
+      it 'should callback with a scoped model', ->
+        expect(@result).to.be.a Model
+        expect(@result.path()).to.equal('collection.1')
 
-        it 'should callback with a scoped model', ->
-          expect(@result).to.be.a Model
-          expect(@result.path()).to.equal('collection.1')
-
-        it 'should initialize the proper documents and versions', ->
-          expect(@result.get()).to.eql @doc
-          expect(@model.version('collection.1')).to.equal 0
-
-      it 'should re-send subscribes at intervals until receiving "ack.sub"', (done) ->
-        cb = sinon.spy()
-        @emitter.on 'sub', cb
-        @model.subscribe 'collection.1'
-        setTimeout ->
-          expect(cb).to.have.callCount(2)
-          done()
-        , 600
+      it 'should initialize the proper documents and versions', ->
+        expect(@result.get()).to.eql @doc
+        expect(@model.version('collection.1')).to.equal 0
 
     describe 'subsequent subscribes', ->
-      beforeEach ->
-        @model.readStream.resume()
-
       describe 'when subsequent result includes a later version of a prior doc', ->
         before ->
           @subAckOne =
@@ -80,6 +73,8 @@ describe 'Model subscribe', ->
 
         describe 'and there are field scope differences', ->
           describe 'and no incoming operations', ->
+            it 'TODO'
+
           describe 'and incoming operations', ->
             before -> @subAckTwo =
               docs:

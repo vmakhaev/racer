@@ -55,8 +55,11 @@ describe 'Model fetch', ->
 
       describe 'compound fetches', ->
         describe 'who designate same doc, with different whitelist doc fields', ->
+          it 'TODO'
         describe 'where one fetch is a subset of another fetch', ->
+          it 'TODO'
         describe 'where all fetches designate mutually exclusive docs', ->
+          it 'TODO'
 
     describe 'subsequent fetches', ->
       describe 'whose doc is equivalent to the first fetch, with different whitelist doc fields', ->
@@ -475,3 +478,96 @@ describe 'Model fetch', ->
               'collection.1': true
 
       describe 'with an overlapping subscription', ->
+        it 'TODO'
+
+  describe 'on a pattern', ->
+    describe '*', ->
+      describe 'first fetch', ->
+        beforeEach (done) ->
+          docOne =
+            id: 1
+            name: 'Brian'
+            _v_: 0
+          docTwo =
+            id: 2
+            name: 'Nate'
+            _v_: 1
+
+          @model.fetch '*', (err, @result) =>
+            expect(err).to.equal null
+            done()
+          @remoteEmitter.emit 'ack.fetch',
+            docs:
+              'collection.1':
+                snapshot: docOne
+              'collection.2':
+                snapshot: docTwo
+            pointers:
+              '*': ''
+
+        it 'should callback with a scoped model', ->
+          expect(@result).to.be.a Model
+          expect(@result.path()).to.equal ''
+
+        it 'should initialize the proper documents and versions', ->
+          expect(@result.get()).to.eql
+            collection:
+              1:
+                id: 1
+                name: 'Brian'
+              2:
+                id: 2
+                name: 'Nate'
+          expect(@model.get('collection.1')).to.eql
+            id: 1
+            name: 'Brian'
+          expect(@model.get('collection.2')).to.eql
+            id: 2
+            name: 'Nate'
+          expect(@model.version('collection.1')).to.equal 0
+          expect(@model.version('collection.2')).to.equal 1
+
+    describe 'collection.*...', ->
+      describe 'first fetch', ->
+        beforeEach (done) ->
+          docOne =
+            id: 1
+            name: 'Brian'
+            _v_: 0
+          docTwo =
+            id: 2
+            name: 'Nate'
+            _v_: 1
+
+          @model.fetch 'collection.*.name', (err, @result) =>
+            expect(err).to.equal null
+            done()
+          @remoteEmitter.emit 'ack.fetch',
+            docs:
+              'collection.1':
+                snapshot: docOne
+              'collection.2':
+                snapshot: docTwo
+            pointers:
+              'collection.*.name': 'collection'
+
+        it 'should callback with a scoped model', ->
+          expect(@result).to.be.a Model
+          expect(@result.path()).to.equal 'collection'
+
+        it 'should initialize the proper documents and versions', ->
+          expect(@result.get()).to.eql
+            1:
+              id: 1
+              name: 'Brian'
+            2:
+              id: 2
+              name: 'Nate'
+          expect(@model.get('collection.1')).to.eql
+            id: 1
+            name: 'Brian'
+          expect(@model.get('collection.2')).to.eql
+            id: 2
+            name: 'Nate'
+          expect(@model.version('collection.1')).to.equal 0
+          expect(@model.version('collection.2')).to.equal 1
