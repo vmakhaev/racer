@@ -55,6 +55,7 @@ describe 'Model unsubscribe', ->
       , 400 + 200
 
     it 'should clean up data that belongs to no other fetches or subscriptions, before an ack', ->
+      expect(@model.get('collection.1')).to.not.equal undefined
       @model.unsubscribe 'collection.1'
       expect(@model.get('collection.1')).to.equal undefined
 
