@@ -62,7 +62,7 @@ describe 'Model fetch', ->
           it 'TODO'
 
     describe 'subsequent fetches', ->
-      describe 'whose doc is equivalent to the first fetch, with different whitelist doc fields', ->
+      describe 'whose doc is equivalent to the first fetch, with different whitelist doc field', ->
         it 'should ask the server for both fetches again (to maintain version consistency)', ->
           {id} = @model.fetch 'collection.1.name'
           @remoteEmitter.emit 'ack.fetch',
@@ -102,6 +102,8 @@ describe 'Model fetch', ->
               id: id
               docs:
                 'collection.1':
+                  # TODO This should include a snapshot, because of differing
+                  # whitelist
                   ops: [
                     transaction.create id: 'other-client.1', method: 'set', args: ['collection.1.name', 'Brian'], ver: 0
                     transaction.create id: 'other-client.1', method: 'set', args: ['collection.1.age', 28], ver: 1
@@ -572,6 +574,41 @@ describe 'Model fetch', ->
           expect(@model.version('collection.1')).to.equal 0
           expect(@model.version('collection.2')).to.equal 1
 
+      describe 'subsequent fetches', ->
+        describe 'with same * position, with different trailing doc field', ->
+          it 'should ask the server for both fetches again (to maintain version consistency)', ->
+            {id} = @model.fetch 'collection.*.name'
+            @remoteEmitter.emit 'ack.fetch',
+              id: id
+              docs:
+                'collection.1':
+                  snapshot:
+                    id: 1
+                    name: 'Bryan'
+                    _v_: 0
+              pointers:
+                'collection.*.name': true
+
+            cb = sinon.spy()
+            @emitter.on 'fetch', cb
+            {id} = @model.fetch 'collection.*.age'
+            expect(cb).to.be.calledWithEql [
+              [
+                id
+                {
+                  t: 'collection.*.age'
+                  v: # version info here is a hash from ids to versions, because * matches many ids
+                    1: 0
+                  f: ['name'] # Other fields
+                }
+              ]
+            ]
+
+        describe 'with later * position', ->
+          it 'TODO'
+        describe 'with earlier * position', ->
+          it 'TODO'
+
     describe 'collection.x...*...', ->
       describe 'first fetch', ->
         beforeEach (done) ->
@@ -609,3 +646,25 @@ describe 'Model fetch', ->
               {name: 'Squeak'}
             ]
           expect(@model.version('collection.1')).to.equal 0
+
+      describe 'subsequent fetches', ->
+        describe 'with same * position and same prefix, with different trailing doc field', ->
+          it 'TODO'
+
+        describe 'with same * position and overlapping prefixes', ->
+          it 'TODO'
+
+        describe 'with same * position and non-overlapping prefixes', ->
+          it 'TODO'
+
+        describe 'with later * position and overlapping prefixes', ->
+          it 'TODO'
+
+        describe 'with later * position and non-overlapping prefixes', ->
+          it 'TODO'
+
+        describe 'with earlier * position and overlapping prefixes', ->
+          it 'TODO'
+
+        describe 'with earlier * position and non-overlapping prefixes', ->
+          it 'TODO'
