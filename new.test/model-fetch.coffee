@@ -4,6 +4,8 @@ sinon = require 'sinon'
 {BrowserModel: Model} = require '../test/util/model'
 transaction = require('../lib/transaction')
 expect = require 'expect.js'
+hashable = require '../lib/protocol.hashable'
+readable = require '../lib/protocol.readable'
 
 describe 'Model fetch', ->
   beforeEach ->
@@ -668,3 +670,46 @@ describe 'Model fetch', ->
 
         describe 'with earlier * position and non-overlapping prefixes', ->
           it 'TODO'
+
+  describe 'on a query', ->
+    describe 'first fetch', ->
+      describe 'minimal result latency xxx', ->
+        beforeEach (done) ->
+          registry = @model._queryMotifRegistry
+          registry.add 'collection', 'olderThan', (age) ->
+            @where('age').gt(age)
+          @query = @model.query('collection').olderThan(21)
+          @model.fetch @query, (err, @result) =>
+            expect(err).to.equal null
+            done()
+          pointers = {}
+          pointers[hashable.hash(@query)] =
+            ns: 'collection'
+            ids: [1, 4]
+          @remoteEmitter.emit 'ack.fetch',
+            docs:
+              'collection.1':
+                snapshot: @docOne = {id: 1, age: 22, _v_: 0}
+              'collection.4':
+                snapshot: @docTwo = {id: 4, age: 30, _v_: 5}
+            pointers: pointers
+
+        it 'should callback with a scoped model', ->
+          expect(@result).to.be.a Model
+          expect(@result.path()).to.equal readable.resultPath(@query, @model)
+
+        it 'should initialize the proper documents and versions', ->
+          expect(@result.get()).to.eql [@docOne, @docTwo]
+          expect(@model.get('collection.1')).to.eql {id: 1, age: 22}
+          expect(@model.get('collection.4')).to.eql {id: 4, age: 30}
+          expect(@model.version('collection.1')).to.equal 0
+          expect(@model.version('collection.4')).to.equal 5
+
+      describe 'non-trivial result latency', ->
+        it 'should re-send fetches at intervals until receiving "ack.fetch"'
+
+    describe 'compound fetches', ->
+      it 'TODO'
+
+    describe 'subsequent fetches', ->
+      it 'TODO'

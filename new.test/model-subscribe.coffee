@@ -4,6 +4,8 @@ sinon = require 'sinon'
 {BrowserModel: Model} = require '../test/util/model'
 transaction = require('../lib/transaction')
 expect = require 'expect.js'
+hashable = require '../lib/protocol.hashable'
+readable = require '../lib/protocol.readable'
 
 # TODO Test that subsequent duplicate subscription targets do not send a second
 # time over the wire.
@@ -58,8 +60,20 @@ describe 'Model subscribe', ->
         expect(@result.get()).to.eql @doc
         expect(@model.version('collection.1')).to.equal 0
 
+    describe 'duplicate subscribes', ->
+      beforeEach ->
+        @model.readStream.resume()
+
+      describe 'while connected', ->
+        it 'should not send a message', ->
+          cb = sinon.spy()
+          @emitter.on 'sub', cb
+          @model.subscribe 'collection.1.name'
+          @model.subscribe 'collection.1.name'
+          expect(cb).to.have.callCount(1)
+
     describe 'subsequent subscribes', ->
-      describe 'when subsequent result includes a later version of a prior doc', ->
+      describe 'when subsequent result includes a later version of a doc beloning to prior subscribe result', ->
         before ->
           @subAckOne =
             docs:
@@ -121,25 +135,125 @@ describe 'Model subscribe', ->
             it 'should not apply the inlfight ops to the new snapshot if they are all part of the received ops'
 
         describe 'and there are no field scope differences', ->
-          it 'should transform pending txns against the subscription ops after updating the snapshot'
+          it 'should transform pending txns against the subscription ops'
           it 'should apply the incoming ops instead of updating the new snapshots'
 
-    describe 'duplicate subscribes', ->
-      beforeEach ->
-        @model.readStream.resume()
+    # Test re-connection subscription
+    describe 'a subscription request that includes additional snapshot information', ->
+      describe 'that acks before local transactions', ->
+        it 'should apply the received operations'
 
+      describe 'that acks after local transactions', ->
+        it 'should apply the received operations after transforming them against the local ones'
+
+
+  describe 'on a query', ->
+    beforeEach ->
+      registry = @model._queryMotifRegistry
+      registry.add 'users', 'olderThan', (age) ->
+        @where('age').gt(age)
+
+    it 'should not throw an error', ->
+      query = @model.query 'users', 'olderThan', 21
+      err = null
+      try
+        @model.subscribe query
+      catch e
+        err = e
+      finally
+        expect(err).to.equal null
+
+    it 'should emit a query tuple on the "sub" channel', ->
+      cb = sinon.spy()
+      @emitter.on 'sub', cb
+      query = @model.query('users').olderThan(21)
+      {id: subscriptionId} = @model.subscribe query
+      expect(cb).to.be.calledWithEql [
+        [
+          subscriptionId
+          {
+            #  [ns, {motifName: args}, queryType]
+            #  e.g., [ns, {motifName: args}, 'one'] where 'one' => findOne
+            #  e.g., [ns, {motifName: args}, 'count'] => aggregate count
+            t: ['users', {olderThan: [21]}, null]
+          }
+        ]
+      ]
+
+    it 'should re-send subscribes at intervals until receiving "ack.sub"', (done) ->
+      cb = sinon.spy()
+      @emitter.on 'sub', cb
+      query = @model.query('users').olderThan(21)
+      @model.subscribe query
+      setTimeout ->
+        expect(cb).to.have.callCount(2)
+        done()
+      , 600
+
+    describe 'first subscribe', ->
+      describe 'minimal result latency', ->
+        beforeEach (done) ->
+          @query = @model.query('users').olderThan(21)
+          @model.subscribe @query, (err, @result) =>
+            expect(err).to.equal null
+            @result.get() # => [@docOne]
+            done()
+          pointers = {}
+          pointers[hashable.hash(@query)] =
+            ns: 'users'
+            ids: [1]
+          @docOne =
+            id: 1
+            age: 22
+            _v_: 0
+          @remoteEmitter.emit 'ack.sub',
+            docs:
+              'users.1':
+                snapshot: @docOne
+#                fields: ['age']
+            pointers: pointers
+
+        it 'should callback with a scoped model', ->
+          expect(@result).to.be.a Model
+          expect(@result.path()).to.equal readable.resultPath(@query, @model)
+
+        it 'should initialize the proper documents and versions', ->
+          expect(@result.get()).to.eql [{id: 1, age: 22}]
+          expect(@model.get('users.1')).to.eql {id: 1, age: 22}
+          expect(@model.version('users.1')).to.equal 0
+
+    describe 'duplicate subscribes', ->
       describe 'while connected', ->
         it 'should not send a message', ->
           cb = sinon.spy()
           @emitter.on 'sub', cb
-          @model.subscribe 'collection.1.name'
-          @model.subscribe 'collection.1.name'
+          query = @model.query('users').olderThan(21)
+          @model.subscribe query
+          @model.subscribe query
           expect(cb).to.have.callCount(1)
+
+    describe 'subsequent subscribes', ->
+      describe 'when subsequent result includes a later version of a doc beloning to prior subscribe result', ->
+        describe 'and there are field scope differences', ->
+          describe 'and no incoming operations', ->
+            it 'should update to the new snapshots'
+          describe 'and incoming operations', ->
+            it 'should update to the new snapshots'
+            it 'should transform pending ops against the received ops'
+            it 'should apply the transformed pending ops to the newly set snapshot'
+            it 'should transform inflight txns against the received ops if not one of the received ops'
+            it 'should not apply the inlfight ops to the new snapshot if they are all part of the received ops'
+        describe 'and there are no field scope differences', ->
+          it 'should transform pending txns against the subscription ops'
+          it 'should apply the incoming ops instead of updating the new snapshots'
+
+      describe 'when subsequent result does not intersect with existing results', ->
+        it 'should add the result snapshots to the model'
 
     # Test re-connection subscription
     describe 'a subscription request that includes additional snapshot information', ->
-      describe 'that responds before local transactions', ->
+      describe 'that acks before local transactions', ->
         it 'should apply the received operations'
 
-      describe 'that responds after local transactions', ->
+      describe 'that acks after local transactions', ->
         it 'should apply the received operations after transforming them against the local ones'
