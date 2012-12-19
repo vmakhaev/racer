@@ -75,8 +75,8 @@ describe 'Memory', ->
         colors:
           green:
             id: 'green'
-            value: false
-      property = memory.get 'colors', 'green', 'value'
+            shown: false
+      property = memory.get 'colors', 'green', 'shown'
       expect(property).equal false
 
     it 'can get a nested property on an undefined property', ->
@@ -170,3 +170,139 @@ describe 'Memory', ->
 
   describe 'set', ->
 
+    it 'can set an empty doc', ->
+      memory = new Memory
+      previous = memory.set 'colors', 'green', null, null, {}
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green: {}
+
+    it 'can set a property', ->
+      memory = new Memory
+      previous = memory.set 'colors', 'green', 'shown', null, false
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green:
+            shown: false
+
+    it 'can set multi-nested property', ->
+      memory = new Memory
+      previous = memory.set 'colors', 'green', 'rgb', 'green.float', 1
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green:
+            rgb:
+              green:
+                float: 1
+
+    it 'can set on an existing document', ->
+      memory = new Memory
+      previous = memory.set 'colors', 'green', null, null, {}
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green: {}
+      previous = memory.set 'colors', 'green', 'shown', null, false
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green:
+            shown: false
+
+    it 'returns the previous value on set', ->
+      memory = new Memory
+      previous = memory.set 'colors', 'green', 'shown', null, false
+      expect(previous).equal undefined
+      expect(memory.get()).eql
+        colors:
+          green:
+            shown: false
+      previous = memory.set 'colors', 'green', 'shown', null, true
+      expect(previous).equal false
+      expect(memory.get()).eql
+        colors:
+          green:
+            shown: true
+
+    it 'throws an error when setting without a collection', ->
+      memory = new Memory
+      expect(-> memory.set null, null, null, null, 'x').throwError()
+
+    it 'throws an error when setting without a document', ->
+      memory = new Memory
+      expect(-> memory.set 'colors', null, null, null, 'x').throwError()
+
+  describe 'del', ->
+
+    it 'can del on an undefined document', ->
+      memory = new Memory
+      previous = memory.del 'colors', 'green', null, null
+      expect(previous).equal undefined
+      expect(memory.get()).eql {}
+
+    it 'can del on a document', ->
+      memory = new Memory
+      memory.set 'colors', 'green', null, null, {}
+      previous = memory.del 'colors', 'green', null, null
+      expect(previous).eql {}
+      expect(memory.get()).eql colors: {}
+
+    it 'can del on a nested property', ->
+      memory = new Memory
+      memory.set 'colors', 'green', 'rgb', null, [
+        {float: 0, int: 0}
+        {float: 1, int: 255}
+        {float: 0, int: 0}
+      ]
+      previous = memory.del 'colors', 'green', 'rgb', '0.float'
+      expect(previous).eql 0
+      expect(memory.get 'colors', 'green', 'rgb').eql [
+        {int: 0}
+        {float: 1, int: 255}
+        {float: 0, int: 0}
+      ]
+
+    it 'throws an error when deleting without a collection', ->
+      memory = new Memory
+      expect(-> memory.del null, null, null, null, 'x').throwError()
+
+    it 'throws an error when deleting without a document', ->
+      memory = new Memory
+      expect(-> memory.del 'colors', null, null, null, 'x').throwError()
+
+  describe 'push', ->
+
+    it 'can push on an undefined property', ->
+      memory = new Memory
+      len = memory.push 'users', 'chris', 'friends', null, ['jim', 'dan']
+      expect(len).equal 2
+      expect(memory.get()).eql
+        users:
+          chris:
+            friends: ['jim', 'dan']
+
+    it 'can push on a defined arry', ->
+      memory = new Memory
+      len = memory.push 'users', 'chris', 'friends', null, ['jim', 'dan']
+      expect(len).equal 2
+      len = memory.push 'users', 'chris', 'friends', null, ['sue']
+      expect(len).equal 3
+      expect(memory.get()).eql
+        users:
+          chris:
+            friends: ['jim', 'dan', 'sue']
+
+    it 'throws an error when pushing without a collection', ->
+      memory = new Memory
+      expect(-> memory.push null, null, null, null, ['x']).throwError()
+
+    it 'throws an error when pushing without a document', ->
+      memory = new Memory
+      expect(-> memory.push 'users', null, null, null, ['x']).throwError()
+
+    it 'throws an error when pushing without a property', ->
+      memory = new Memory
+      expect(-> memory.push 'users', 'chris', null, null, ['x']).throwError()
