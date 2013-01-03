@@ -69,7 +69,7 @@ describe 'Memory', ->
       property = memory.get ['colors', 'green', 'id']
       expect(property).equal 'green'
 
-    it 'can get a falsey property', ->
+    it 'can get a false property', ->
       memory = new Memory
       memory.world =
         colors:
@@ -78,6 +78,16 @@ describe 'Memory', ->
             shown: false
       property = memory.get ['colors', 'green', 'shown']
       expect(property).equal false
+
+    it 'can get a null property', ->
+      memory = new Memory
+      memory.world =
+        colors:
+          green:
+            id: 'green'
+            shown: null
+      property = memory.get ['colors', 'green', 'shown']
+      expect(property).equal null
 
     it 'can get a method property', ->
       memory = new Memory
@@ -164,6 +174,16 @@ describe 'Memory', ->
         colors:
           green:
             shown: true
+
+    it 'creates an implied array on set', ->
+      memory = new Memory
+      memory.set ['colors', 'green', 'rgb', '2'], 0
+      memory.set ['colors', 'green', 'rgb', '1'], 255
+      memory.set ['colors', 'green', 'rgb', '0'], 0
+      expect(memory.get()).eql
+        colors:
+          green:
+            rgb: [0, 255, 0]
 
     it 'throws an error when setting without a collection', ->
       memory = new Memory
